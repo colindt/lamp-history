@@ -1,5 +1,9 @@
 *.txt
-!requirements.txt
 *.png
 *.pdf
 *.svg
+
+!LICENSE.txt
+!requirements.txt
+!example_history.txt
+!example_output/*

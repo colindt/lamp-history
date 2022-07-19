@@ -15,11 +15,11 @@ def button_pressed(pin):
     global prev_time, double_time
     now = time.time()
     if (now - prev_time) * 1000 > 300:
-        if pin == 18:
+        if pin == 18: # require double press of this button to prevent accidental switches
             if now - double_time <= 2:
                 toggle(pin, now)
                 double_time = 0
-            else:
+            else: # single press is fine
                 double_time = now
         else:
             toggle(pin, now)
