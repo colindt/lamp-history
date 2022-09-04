@@ -17,8 +17,8 @@ button toggles the relay and records the event to `history.txt`.
 [`render.py`](render.py) produces a series of charts based on the `history.txt`
 output by `lamps.py`.
 
-```
-render.py [outpit dir] [list of history files...]
+```sh
+render.py outpit_dir list_of_history_files...
 ```
 
 With no arguments, `render.py` looks for `input.txt` and reads a
@@ -56,7 +56,7 @@ those times):
 
 ### Plots
 
-[`plots.png`](example_output/plots.png) and -`.pdf` shows various plots of other
+[`plots1.png`](example_output/plots1.png) and -`.pdf` shows various plots of other
 information about the data that might be interesting. The top two are histograms
 of the time the lamps are continuously *off* or *on* (a "segment"). The middle
 two show the relationship between the lengths of adjacent segments (*off* then

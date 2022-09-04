@@ -35,8 +35,8 @@ TrendSegment = collections.namedtuple("TrendSegment", ("start", "end", "trend", 
 
 
 def main(outfolder, infiles):
-    print("input: {}".format(infiles))
-    print("output: {}/".format(outfolder))
+    print(f"input: {infiles}")
+    print(f"output: {outfolder}/")
 
     os.makedirs(outfolder, exist_ok=True)
 
@@ -46,20 +46,21 @@ def main(outfolder, infiles):
     split_off_segments = split_segments(off_segments)
     split_on_segments = split_segments(on_segments)
 
-    draw_chart_frame(*draw_segment_chart(split_off_segments)).save("{}/history.png".format(outfolder))
+    draw_chart_frame(*draw_segment_chart(split_off_segments)).save(f"{outfolder}/history.png")
 
     lut = colormap_to_lut(colormap)
 
+    trend_segments = {}
     for days,name in ((1, "daily"), (7, "weekly"), (14, "fortnightly"), (30, "monthly")):
         print()
-        trend_segments = calc_trend_segment_values(split_segments(make_trend_segments(events, days * seconds_per_day)))
-        draw_chart_frame(*draw_trend_chart(trend_segments, days * seconds_per_day, lut)).save("{}/{}_trend.png".format(outfolder, name))
+        trend_segments[days] = calc_trend_segment_values(split_segments(make_trend_segments(events, days * seconds_per_day)))
+        draw_chart_frame(*draw_trend_chart(trend_segments[days], days * seconds_per_day, lut)).save(f"{outfolder}/{name}_trend.png")
 
     print()
-    trend_segments = calc_trend_segment_values(make_trend_segments(events, seconds_per_day))
-    fig = draw_plots(events, off_segments, on_segments, trend_segments)
-    fig.savefig("{}/plots.png".format(outfolder))
-    fig.savefig("{}/plots.pdf".format(outfolder))
+    figs = draw_plots(events, off_segments, on_segments, trend_segments)
+    for i,fig in enumerate(figs):
+        fig.savefig(f"{outfolder}/plots{i+1}.png")
+        fig.savefig(f"{outfolder}/plots{i+1}.pdf")
 
 
 def load_events_files(infiles):
@@ -477,19 +478,19 @@ def format_hours(t):
     return "{:2.0f}:{:02.0f}".format(hours, minutes)
 
 
-
 def draw_plots(events, off_segments, on_segments, trend_segments):
     print("drawing plots...")
 
     advanced_plots = True
 
+    # page 1
     w = 8.5
     h = 11
 
     if advanced_plots:
-        fig, axs = plt.subplots(3, 2, figsize=(w,h), tight_layout=True)
+        fig1, axs = plt.subplots(3, 2, figsize=(w,h), tight_layout=True)
     else:
-        fig, axs = plt.subplots(2, 1, figsize=(w,h), tight_layout={"rect":(1.25/w, 0.6/h, 7.25/w, 10.5/h), "h_pad":3}, squeeze=False)
+        fig1, axs = plt.subplots(2, 1, figsize=(w,h), tight_layout={"rect":(1.25/w, 0.6/h, 7.25/w, 10.5/h), "h_pad":3}, squeeze=False)
 
     off_segment_lengths = segment_length_hours(off_segments)
     on_segment_lengths = segment_length_hours(on_segments)
@@ -553,7 +554,7 @@ def draw_plots(events, off_segments, on_segments, trend_segments):
         axs[1,1].set_xlim(axs[0,1].get_xlim())
 
         trend_values = {}
-        for s in trend_segments:
+        for s in trend_segments[1]:
             trend_values[time.mktime(s.start)] = s.start_value
 
         x3 = [trend_values[time.mktime(i.start)]/(60*60) for i in off_segments]
@@ -573,8 +574,20 @@ def draw_plots(events, off_segments, on_segments, trend_segments):
         axs[2,1].yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
         axs[2,1].set_xlabel("Time Off in the Last Day")
         axs[2,1].set_ylabel("Subsequent On Segment Length")
+    
+    # page 2
+    w = 11
+    h = 8.5
 
-    return fig
+    fig2, ax = plt.subplots(1, 1, figsize=(w,h), tight_layout=True)
+
+    
+    for k in trend_segments:
+        x5 = [datetime.datetime.fromtimestamp(time.mktime(i.start)) for i in trend_segments[k]]
+        y5 = [i.start_value/(60*60*k) for i in trend_segments[k]]
+        ax.plot(x5, y5, linewidth=1)
+
+    return (fig1, fig2)
 
 
 def segment_length_hours(segments):
