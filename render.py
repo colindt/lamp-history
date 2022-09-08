@@ -229,18 +229,20 @@ def calc_trend_segment_values(trend_segments):
     return new_trend_segments
 
 
-def draw_segment_chart(off_segments, width=720, day_height=6):
+def draw_chart(segments, draw_function, setup_function=(lambda s,**k:(None,None,None)), lut=None, width=720, day_height=6, **kwargs):
     print("drawing segment chart...")
 
-    first_date = time_to_date(off_segments[0].start)
-    last_date  = time_to_date(off_segments[-1].end)
+    first_date = time_to_date(segments[0].start)
+    last_date  = time_to_date(segments[-1].end)
 
     day_count = (last_date - first_date).days + 1
 
     im = Image.new("RGB", (width, day_height * day_count), (255,255,255))
     draw = ImageDraw.Draw(im)
 
-    for s in off_segments:
+    setup, key_min, key_max = setup_function(segments, **kwargs)
+
+    for s in segments:
         y1 = (time_to_date(s.start) - first_date).days * day_height
 
         seconds_from_midnight = ((s.start.tm_hour * 60) + s.start.tm_min) * 60 + s.start.tm_sec
@@ -253,57 +255,56 @@ def draw_segment_chart(off_segments, width=720, day_height=6):
         x2 = x1 + w
         y2 = y1 + day_height
 
-        draw.rectangle((round(x1), y1, round(x2)-1, y2-1), fill=(0,0,0), outline=None, width=0)
+        draw_function(draw, s, (round(x1), y1, round(x2)-1, y2-1), setup, lut, **kwargs)
 
-    return (im, day_height, day_count, off_segments[0].start)
+    return (im, day_height, day_count, segments[0].start, lut, key_min, key_max)
 
 
-def draw_trend_chart(trend_segments, trend_interval, lut, width=720, day_height=6, normalized=True):
-    print("drawing trend chart...")
+def draw_segment_chart(off_segments):
+    def draw_function(draw, segment, coords, setup, lut):
+        draw.rectangle(coords, fill=(0,0,0), outline=None, width=0)
 
-    first_date = time_to_date(trend_segments[0].start)
-    last_date  = time_to_date(trend_segments[-1].end)
+    return draw_chart(off_segments, draw_function)
 
-    day_count = (last_date - first_date).days + 1
 
-    im = Image.new("RGB", (width, day_height * day_count), (255,255,255))
-    draw = ImageDraw.Draw(im)
+def draw_trend_chart(trend_segments, trend_interval, lut, normalized=True):
+    def setup_function(segments, trend_interval, normalized):
+        if normalized:
+            trend_max = 0
+            trend_min = trend_interval
+            for s in segments:
+                trend_max = max(trend_max, s.start_value, s.end_value)
 
-    if normalized:
-        trend_max = 0
-        trend_min = trend_interval
-        for s in trend_segments:
-            trend_max = max(trend_max, s.start_value, s.end_value)
+                if time.mktime(s.start) >= time.mktime(segments[0].start) + trend_interval: # don't update minumum on incomplete averages
+                    trend_min = min(trend_min, s.start_value, s.end_value)
 
-            if time.mktime(s.start) >= time.mktime(trend_segments[0].start) + trend_interval: # don't update minumum on incomplete averages
-                trend_min = min(trend_min, s.start_value, s.end_value)
+        else:
+            trend_max = trend_interval
+            trend_min = 0
+        
+        key_min = trend_min / trend_interval
+        key_max = trend_max / trend_interval
 
-    else:
-        trend_max = trend_interval
-        trend_min = 0
+        setup = {
+            "start" : segments[0].start,
+            "trend_min" : trend_min,
+            "trend_max" : trend_max,
+        }
+        return (setup, key_min, key_max)
 
-    for s in trend_segments:
-        if time.mktime(s.start) < time.mktime(trend_segments[0].start) + trend_interval:
-            continue
+    def draw_function(draw, segment, coords, setup, lut, **kwargs):
+        if time.mktime(segment.start) < time.mktime(setup["start"]) + kwargs["trend_interval"]:
+            return
+        
+        trend_min = setup["trend_min"]
+        trend_max = setup["trend_max"]
 
-        y1 = (time_to_date(s.start) - first_date).days * day_height
+        start_value = (segment.start_value - trend_min) / (trend_max - trend_min)
+        end_value   = (segment.end_value   - trend_min) / (trend_max - trend_min)
 
-        seconds_from_midnight = ((s.start.tm_hour * 60) + s.start.tm_min) * 60 + s.start.tm_sec
-        x1 = seconds_from_midnight * width / seconds_per_day
+        draw_gradient(draw, *coords, start_value, end_value, lut)
 
-        # this messes up for daylight savings changes because the w calculation just
-        # calculates the difference in seconds without regard for the missing/extra 2am hour
-        w = max(1, (time.mktime(s.end) - time.mktime(s.start)) * width / seconds_per_day)
-
-        x2 = x1 + w
-        y2 = y1 + day_height
-
-        start_value = (s.start_value - trend_min) / (trend_max - trend_min)
-        end_value   = (s.end_value   - trend_min) / (trend_max - trend_min)
-
-        draw_gradient(draw, round(x1), y1, round(x2)-1, y2-1, start_value, end_value, lut)
-
-    return (im, day_height, day_count, trend_segments[0].start, lut, trend_min/trend_interval, trend_max/trend_interval)
+    return draw_chart(trend_segments, draw_function, setup_function, lut, trend_interval=trend_interval, normalized=normalized)
 
 
 def colormap_to_lut(colormap):
