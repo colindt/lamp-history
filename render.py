@@ -57,6 +57,15 @@ def main(outfolder, infiles):
         draw_chart_frame(*draw_trend_chart(trend_segments[days], days * seconds_per_day, lut)).save(f"{outfolder}/{name}_trend.png")
 
     print()
+    cohesion_segments = calc_trend_segment_values(split_segments(make_cohesion_segments(trend_segments[1])), seconds_per_day)
+    with open(f"{outfolder}/cohesion_segments.txt", "w") as f:
+        for s in cohesion_segments:
+            f.write(str(s))
+            f.write("\n")
+    #draw_chart_frame(*draw_cohesion_chart(trend_segments[1], lut)).save(f"{outfolder}/cohesion.png")
+    draw_chart_frame(*draw_trend_chart(cohesion_segments, seconds_per_day, lut, False)).save(f"{outfolder}/cohesion.png")
+
+    print()
     figs = draw_plots(events, off_segments, on_segments, trend_segments)
     for i,fig in enumerate(figs):
         fig.savefig(f"{outfolder}/plots{i+1}.png")
@@ -95,7 +104,7 @@ def make_segments(events):
     off_segments = []
     on_segments = []
     state = OnOff.on
-    segment_start = None
+    segment_start = events[0]
     for e in events:
         t1 = segment_start.time if segment_start else None
         t2 = e.time
@@ -155,64 +164,95 @@ def split_segments(segments):
 def make_trend_segments(events, interval=seconds_per_day):
     print("making trend segments...")
 
-    trend_segments = []
+    def state_transition_function(head_state, tail_state):
+        if head_state == OnOff.on and tail_state == OnOff.off:
+            return Trend.falling
+        elif head_state == OnOff.off and tail_state == OnOff.on:
+            return Trend.rising
+        else:
+            return Trend.steady
+
+    return window_walk(events, "time", "state", OnOff.on, state_transition_function, interval)
+
+
+def make_cohesion_segments(trend_segments, interval=seconds_per_day):
+    print("making cohesion segments...")
+    
+    def state_transition_function(head_state, tail_state):
+        if head_state == Trend.steady and tail_state != Trend.steady:
+            return Trend.rising
+        elif head_state != Trend.steady and tail_state == Trend.steady:
+            return Trend.falling
+        else:
+            return Trend.steady
+    
+    return window_walk(trend_segments, "start", "trend", Trend.steady, state_transition_function, interval)
+
+
+def window_walk(events, time_attr, state_attr, intial_pointer_state, state_transition_function, interval=seconds_per_day):
+    # two markers, `head` and `tail` walk along the timeline `interval` seconds apart. 
+
+    window_segments = []
     state = Trend.steady
-    head = time.mktime(events[0].time)
+    head = time.mktime(getattr(events[0], time_attr))
     tail = head - interval
     head_next_index = 0
     tail_next_index = 0
-    head_state = OnOff.on
-    tail_state = OnOff.on
+    head_state = intial_pointer_state
+    tail_state = intial_pointer_state
     prev_head = head
 
     while head_next_index < len(events):
         prev_head = head
 
-        head_diff = time.mktime(events[head_next_index].time) - head
-        tail_diff = time.mktime(events[tail_next_index].time) - tail
+        # calculate time between current markers and their next state transition
+        head_diff = time.mktime(getattr(events[head_next_index], time_attr)) - head
+        tail_diff = time.mktime(getattr(events[tail_next_index], time_attr)) - tail
 
         if head_diff > tail_diff:
+            # if `tail` is closer to a state transition, move up to it
             head += tail_diff
             tail += tail_diff
 
-            tail_state = events[tail_next_index].state
+            # record the state transition and look ahead to the next `tail` transition
+            tail_state = getattr(events[tail_next_index], state_attr)
             tail_next_index += 1
         elif head_diff < tail_diff:
+            # if `head` is closer to a state transition, move up to it
             head += head_diff
             tail += head_diff
 
-            head_state = events[head_next_index].state
+            # record the state transition and look ahead to the next `head` transition
+            head_state = getattr(events[head_next_index], state_attr)
             head_next_index += 1
         else:
+            # if `head` and `tail` reach a state transition at the same time, move up to them
             head += head_diff
             tail += head_diff
 
-            head_state = events[head_next_index].state
-            tail_state = events[tail_next_index].state
+            # record the state transitions and look ahead to the next transitions
+            head_state = getattr(events[head_next_index], state_attr)
+            tail_state = getattr(events[tail_next_index], state_attr)
             head_next_index += 1
             tail_next_index += 1
 
+        # timestamps of segment to add
         start = time.localtime(prev_head)
         end = time.localtime(head)
 
-        trend_segments.append(TrendSegment(start, end, state))
+        window_segments.append(TrendSegment(start, end, state))
 
-        if head_state == OnOff.on and tail_state == OnOff.off:
-            state = Trend.falling
-        elif head_state == OnOff.off and tail_state == OnOff.on:
-            state = Trend.rising
-        else:
-            state = Trend.steady
+        state = state_transition_function(head_state, tail_state)
 
-    return trend_segments
+    return window_segments
 
 
-def calc_trend_segment_values(trend_segments):
+def calc_trend_segment_values(trend_segments, inital_value=0):
     print("caluclating trend segment values...")
 
     new_trend_segments = []
 
-    prev_end_value = 0
+    prev_end_value = inital_value
 
     for s in trend_segments:
         segment_length = time.mktime(s.end) - time.mktime(s.start) # dst changes introduce an off-by-one error here and I'm still not sure why
@@ -229,9 +269,10 @@ def calc_trend_segment_values(trend_segments):
     return new_trend_segments
 
 
+# draw_function(draw, segment, coords, setup, lut, **kwargs) -> no return value
+# setup_function(segments, **kwargs) -> (setup_for_draw_function, key_min, key_max)
+# `kwargs` of `draw_chart()` are passed along to both functions
 def draw_chart(segments, draw_function, setup_function=(lambda s,**k:(None,None,None)), lut=None, width=720, day_height=6, **kwargs):
-    print("drawing segment chart...")
-
     first_date = time_to_date(segments[0].start)
     last_date  = time_to_date(segments[-1].end)
 
@@ -261,13 +302,18 @@ def draw_chart(segments, draw_function, setup_function=(lambda s,**k:(None,None,
 
 
 def draw_segment_chart(off_segments):
+    print("drawing segment chart...")
+
     def draw_function(draw, segment, coords, setup, lut):
         draw.rectangle(coords, fill=(0,0,0), outline=None, width=0)
 
     return draw_chart(off_segments, draw_function)
 
 
+
 def draw_trend_chart(trend_segments, trend_interval, lut, normalized=True):
+    print("drawing trend chart...")
+
     def setup_function(segments, trend_interval, normalized):
         if normalized:
             trend_max = 0
@@ -292,6 +338,7 @@ def draw_trend_chart(trend_segments, trend_interval, lut, normalized=True):
         }
         return (setup, key_min, key_max)
 
+
     def draw_function(draw, segment, coords, setup, lut, **kwargs):
         if time.mktime(segment.start) < time.mktime(setup["start"]) + kwargs["trend_interval"]:
             return
@@ -304,7 +351,30 @@ def draw_trend_chart(trend_segments, trend_interval, lut, normalized=True):
 
         draw_gradient(draw, *coords, start_value, end_value, lut)
 
+
     return draw_chart(trend_segments, draw_function, setup_function, lut, trend_interval=trend_interval, normalized=normalized)
+
+
+
+def draw_cohesion_chart(trend_segments, lut):
+    print("drawing cohesion chart...")
+
+    def setup_function(segments):
+        return (None, 0, 1)
+
+
+    def draw_function(draw, segment, coords, setup, lut):
+        if segment.trend == Trend.rising:
+            fill = (128,255,128)
+        elif segment.trend == Trend.falling:
+            fill = (255,128,128)
+        else:
+            fill = (0,0,0)
+        draw.rectangle(coords, fill=fill, outline=None, width=0)
+
+
+    return draw_chart(trend_segments, draw_function, setup_function)
+
 
 
 def colormap_to_lut(colormap):

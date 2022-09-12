@@ -1,3 +1,6 @@
+__pycache__
+.coverage
+
 *.txt
 *.png
 *.pdf
@@ -7,3 +10,4 @@
 !requirements.txt
 !example_history.txt
 !example_output/*
+!test_data/*
