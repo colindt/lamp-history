@@ -29,9 +29,45 @@ seconds_per_day = 24 * 60 * 60
 Trend = enum.IntEnum("Trend", {"rising":1, "falling":-1, "steady":0})
 OnOff = enum.Enum("OnOff", {"on":1, "off":0})
 
-Event = collections.namedtuple("Event", ("time", "pin", "state", "delay", "line"))
-Segment = collections.namedtuple("Segment", ("start", "end"))
-TrendSegment = collections.namedtuple("TrendSegment", ("start", "end", "trend", "start_value", "end_value"), defaults=(None, None))
+
+class Event:
+    def __init__(self, time, pin, state, delay, line):
+        self.time  = time
+        self.pin   = pin
+        self.state = state
+        self.delay = delay
+        self.line  = line
+    
+    def __repr__(self):
+        return f"Event([{time.asctime(self.time)}] {self.state})"
+
+
+class Segment:
+    def __init__(self, start, end):
+        self.start = start
+        self.end   = end
+    
+    def __repr__(self):
+        return f"Segment([{time.asctime(self.start)}] -> [{time.asctime(self.end)}])"
+    
+    def as_tuple(self):
+        return (self.start, self.end)
+
+
+class TrendSegment (Segment):
+    def __init__(self, start, end, trend, start_value=None, end_value=None):
+        self.start       = start
+        self.end         = end
+        self.trend       = trend
+        self.start_value = start_value
+        self.end_value   = end_value
+    
+    def __repr__(self):
+        return f"TrendSegment([{time.asctime(self.start)}] -> [{time.asctime(self.end)}] {self.trend.name} {self.start_value} -> {self.end_value})"
+    
+    def as_tuple(self):
+        return (self.start, self.end, self.trend, self.start_value, self.end_value)
+
 
 
 def main(outfolder, infiles):
@@ -63,7 +99,7 @@ def main(outfolder, infiles):
             f.write(str(s))
             f.write("\n")
     #draw_chart_frame(*draw_cohesion_chart(trend_segments[1], lut)).save(f"{outfolder}/cohesion.png")
-    draw_chart_frame(*draw_trend_chart(cohesion_segments, seconds_per_day, lut, False)).save(f"{outfolder}/cohesion.png")
+    draw_chart_frame(*draw_trend_chart(cohesion_segments, seconds_per_day, lut, normalized=False)).save(f"{outfolder}/cohesion.png")
 
     print()
     figs = draw_plots(events, off_segments, on_segments, trend_segments)
@@ -103,7 +139,7 @@ def make_segments(events):
 
     off_segments = []
     on_segments = []
-    state = OnOff.on
+    state = events[0].state
     segment_start = events[0]
     for e in events:
         t1 = segment_start.time if segment_start else None
@@ -111,7 +147,7 @@ def make_segments(events):
 
         if state == OnOff.on:
             if e.state == OnOff.on:
-                if segment_start:
+                if segment_start:  #pragma: no cover
                     print("warning: state transition from on to on:", segment_start.time, e.time)
             elif e.state == OnOff.off:
                 if t1:
@@ -119,7 +155,7 @@ def make_segments(events):
 
                 segment_start = e
                 state = OnOff.off
-            else:
+            else:  #pragma: no cover
                 raise ValueError("invalid event state '{}'".format(e["state"]))
         elif state == OnOff.off:
             t1 = segment_start.time
@@ -130,11 +166,11 @@ def make_segments(events):
 
                 segment_start = e
                 state = OnOff.on
-            elif e.state == OnOff.off:
+            elif e.state == OnOff.off:  #pragma: no cover
                 print("warning: state transition from off to off", t1, t2)
-            else:
+            else:  #pragma: no cover
                 raise ValueError("invalid event state '{}'".format(e.state))
-        else:
+        else:  #pragma: no cover
             raise ValueError("invalid state machine state '{}'".format(state))
 
     return (off_segments, on_segments)
@@ -152,8 +188,8 @@ def split_segments(segments):
         if date1 == date2:
             new_segments.append(s)
         else:
-            segment1 = type(s)(*(s.start, end_of_day(s.start)) + s[2:])
-            segment2 = type(s)(*(start_of_day(s.end), s.end) + s[2:])
+            segment1 = type(s)(*(s.start, end_of_day(s.start)) + s.as_tuple()[2:])
+            segment2 = type(s)(*(start_of_day(s.end), s.end) + s.as_tuple()[2:])
 
             new_segments.append(segment1)
             new_segments.append(segment2)
@@ -189,17 +225,22 @@ def make_cohesion_segments(trend_segments, interval=seconds_per_day):
     return window_walk(trend_segments, "start", "trend", Trend.steady, state_transition_function, interval)
 
 
-def window_walk(events, time_attr, state_attr, intial_pointer_state, state_transition_function, interval=seconds_per_day):
+def window_walk(events, time_attr, state_attr, intial_tail_state, state_transition_function, interval=seconds_per_day):
     # two markers, `head` and `tail` walk along the timeline `interval` seconds apart. 
 
     window_segments = []
-    state = Trend.steady
+    
     head = time.mktime(getattr(events[0], time_attr))
     tail = head - interval
-    head_next_index = 0
+    
+    head_next_index = 1
     tail_next_index = 0
-    head_state = intial_pointer_state
-    tail_state = intial_pointer_state
+    
+    head_state = getattr(events[0], state_attr)
+    tail_state = intial_tail_state
+    
+    state = state_transition_function(head_state, tail_state)
+    
     prev_head = head
 
     while head_next_index < len(events):
@@ -301,17 +342,17 @@ def draw_chart(segments, draw_function, setup_function=(lambda s,**k:(None,None,
     return (im, day_height, day_count, segments[0].start, lut, key_min, key_max)
 
 
-def draw_segment_chart(off_segments):
+def draw_segment_chart(off_segments, width=720, day_height=6):
     print("drawing segment chart...")
 
     def draw_function(draw, segment, coords, setup, lut):
         draw.rectangle(coords, fill=(0,0,0), outline=None, width=0)
 
-    return draw_chart(off_segments, draw_function)
+    return draw_chart(off_segments, draw_function, width=width, day_height=day_height)
 
 
 
-def draw_trend_chart(trend_segments, trend_interval, lut, normalized=True):
+def draw_trend_chart(trend_segments, trend_interval, lut, width=720, day_height=6, normalized=True):
     print("drawing trend chart...")
 
     def setup_function(segments, trend_interval, normalized):
@@ -352,11 +393,11 @@ def draw_trend_chart(trend_segments, trend_interval, lut, normalized=True):
         draw_gradient(draw, *coords, start_value, end_value, lut)
 
 
-    return draw_chart(trend_segments, draw_function, setup_function, lut, trend_interval=trend_interval, normalized=normalized)
+    return draw_chart(trend_segments, draw_function, setup_function, lut, width=width, day_height=day_height, trend_interval=trend_interval, normalized=normalized)
 
 
 
-def draw_cohesion_chart(trend_segments, lut):
+def draw_cohesion_chart(trend_segments, lut, width=720, day_height=6):
     print("drawing cohesion chart...")
 
     def setup_function(segments):
@@ -373,7 +414,7 @@ def draw_cohesion_chart(trend_segments, lut):
         draw.rectangle(coords, fill=fill, outline=None, width=0)
 
 
-    return draw_chart(trend_segments, draw_function, setup_function)
+    return draw_chart(trend_segments, draw_function, setup_function, width=width, day_height=day_height)
 
 
 
@@ -541,7 +582,7 @@ def grid_color(c):
 
 
 def format_hours(t):
-    if t < 0:
+    if t < 0:  #pragma: no cover
         print("WARNING: negative t: {}. Setting to 0".format(t))
         t = 0
     hours = int(t)
@@ -664,8 +705,8 @@ def draw_plots(events, off_segments, on_segments, trend_segments):
 def segment_length_hours(segments):
     segment_lengths = []
     for s in segments:
-        t1 = struct_time_to_datetime(s[0])
-        t2 = struct_time_to_datetime(s[1])
+        t1 = struct_time_to_datetime(s.start)
+        t2 = struct_time_to_datetime(s.end)
         d = t2 - t1
         hours = (d.days * 24) + (d.seconds / (60*60))
         segment_lengths.append(hours)
@@ -682,14 +723,16 @@ def start_of_day(t):
 
 
 def end_of_day(t):
-    return time.struct_time((t.tm_year, t.tm_mon, t.tm_mday, 23, 59, 59, t.tm_wday, t.tm_yday, -1))
+    # 23:59:60 is a fake time (usually), but 23:59:59 introduces off-by-one errors beacuse we miss the last second of the day
+    # (especially relevant to calc_trend_segment_values)
+    return time.struct_time((t.tm_year, t.tm_mon, t.tm_mday, 23, 59, 60, t.tm_wday, t.tm_yday, -1))
 
 
 def struct_time_to_datetime(t):
     return datetime.datetime.fromtimestamp(time.mktime(t))
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  #pragma: no cover
     if len(sys.argv) == 1:
         # with no arguments, read input.txt for a list of arguments
         with open("input.txt") as f:

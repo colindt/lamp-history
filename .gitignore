@@ -10,4 +10,4 @@ __pycache__
 !requirements.txt
 !example_history.txt
 !example_output/*
-!test_data/*
+!test_data/**
