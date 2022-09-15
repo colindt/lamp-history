@@ -117,17 +117,27 @@ def test_make_trend_segments(events_off_first, events_on_first):
     assert [s.trend for s in trend_segments]       == [ 0,  1,  0,  1,  0,  0, -1,  0,  1,  0, -1,  1,  0, -1,  0,  1,  0]
 
 
-@pytest.mark.skip
-def test_make_cohesion_segments():
-    pass
-
-
 def test_calc_trend_segment_values(events_on_first):
     trend_segments = calc_trend_segment_values(split_segments(make_trend_segments(events_on_first, seconds_per_day)))
-    for s in trend_segments:
-        print(s)
     assert len(trend_segments) == 19  # beware an extra zero-length segment when dealing with timestamps at exactly midnight, due to 23:59:60 and 00:00:00 being different
     assert [s.end_value/(60*60) for s in trend_segments] == [0, 2, 2, 5, 5, 5, 5, 4, 4, 6, 6, 3, 18, 20, 20, 18, 18, 20, 20]
+
+
+def test_make_cohesion_segments(events_on_first):
+    trend_segments = make_trend_segments(events_on_first, seconds_per_day)
+    cohesion_segments = make_cohesion_segments(trend_segments, seconds_per_day)
+    assert len(cohesion_segments) == 20
+    assert [s.end.tm_hour for s in cohesion_segments] == [ 1,  3,  6,  9,  0,  1,  2,  3,  5,  6,  9,  0,  1,  2,  3,  5,  6,  7,  9, 10]
+    assert [s.end.tm_mday for s in cohesion_segments] == [21, 21, 21, 21, 22, 22, 22, 22, 22, 22, 22, 23, 23, 23, 23, 23, 23, 23, 23, 23]
+    assert [s.trend for s in cohesion_segments]       == [ 0, -1,  0, -1,  0,  0,  0,  1, -1,  0,  0, -1, -1,  0,  0,  0,  0,  1,  0,  1]
+
+
+def test_calc_trend_segment_values__cohesion(events_on_first):
+    trend_segments = make_trend_segments(events_on_first, seconds_per_day)
+    cohesion_segments = split_segments(make_cohesion_segments(trend_segments, seconds_per_day))
+    cohesion_segments = calc_trend_segment_values(cohesion_segments, seconds_per_day)
+    assert len(cohesion_segments) == 22  # two extra segments because of the 23:59:60 -> 00:00:00 thing
+    assert [s.end_value/(60*60) for s in cohesion_segments] == [24, 22, 22, 19, 19, 19, 19, 19, 20, 18, 18, 18, 3, 3, 2, 2, 2, 2, 2, 3, 3, 4]
 
 
 @pytest.mark.skip

@@ -222,7 +222,11 @@ def make_cohesion_segments(trend_segments, interval=seconds_per_day):
         else:
             return Trend.steady
     
-    return window_walk(trend_segments, "start", "trend", Trend.steady, state_transition_function, interval)
+    # tack on a fake segment so that the last segment actually gets counted
+    # note that we call window_walk with state_attr="start", so the end time of the last segment never gets counted
+    walk_segments = trend_segments + [TrendSegment(trend_segments[-1].end, None, None)]
+    
+    return window_walk(walk_segments, "start", "trend", Trend.steady, state_transition_function, interval)
 
 
 def window_walk(events, time_attr, state_attr, intial_tail_state, state_transition_function, interval=seconds_per_day):
