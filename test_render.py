@@ -27,6 +27,29 @@ def segments_on_first(events_on_first):
     return make_segments(events_on_first)
 
 
+@pytest.fixture
+def trend_segments_with_values(events_on_first):
+    return calc_trend_segment_values(split_segments(make_trend_segments(events_on_first, seconds_per_day)))
+
+
+@pytest.fixture
+def cohesion_segments_with_values(events_on_first):
+    trend_segments = make_trend_segments(events_on_first, seconds_per_day)
+    cohesion_segments = split_segments(make_cohesion_segments(trend_segments, seconds_per_day))
+    cohesion_segments = calc_trend_segment_values(cohesion_segments, seconds_per_day)
+    return cohesion_segments
+
+
+@pytest.fixture
+def trend_lut():
+    return colormap_to_lut(trend_colormap)
+
+
+@pytest.fixture
+def cohesion_lut():
+    return colormap_to_lut(cohesion_colormap)
+
+
 def test_load_events_files(events_off_first, events_on_first):
     assert len(events_on_first) == 11
     assert events_on_first[0].state == OnOff.on
@@ -117,10 +140,9 @@ def test_make_trend_segments(events_off_first, events_on_first):
     assert [s.trend for s in trend_segments]       == [ 0,  1,  0,  1,  0,  0, -1,  0,  1,  0, -1,  1,  0, -1,  0,  1,  0]
 
 
-def test_calc_trend_segment_values(events_on_first):
-    trend_segments = calc_trend_segment_values(split_segments(make_trend_segments(events_on_first, seconds_per_day)))
-    assert len(trend_segments) == 19  # beware an extra zero-length segment when dealing with timestamps at exactly midnight, due to 23:59:60 and 00:00:00 being different
-    assert [s.end_value/(60*60) for s in trend_segments] == [0, 2, 2, 5, 5, 5, 5, 4, 4, 6, 6, 3, 18, 20, 20, 18, 18, 20, 20]
+def test_calc_trend_segment_values(trend_segments_with_values):
+    assert len(trend_segments_with_values) == 19  # beware an extra zero-length segment when dealing with timestamps at exactly midnight, due to 23:59:60 and 00:00:00 being different
+    assert [s.end_value/(60*60) for s in trend_segments_with_values] == [0, 2, 2, 5, 5, 5, 5, 4, 4, 6, 6, 3, 18, 20, 20, 18, 18, 20, 20]
 
 
 def test_make_cohesion_segments(events_on_first):
@@ -132,12 +154,9 @@ def test_make_cohesion_segments(events_on_first):
     assert [s.trend for s in cohesion_segments]       == [ 0, -1,  0, -1,  0,  0,  0,  1, -1,  0,  0, -1, -1,  0,  0,  0,  0,  1,  0,  1]
 
 
-def test_calc_trend_segment_values__cohesion(events_on_first):
-    trend_segments = make_trend_segments(events_on_first, seconds_per_day)
-    cohesion_segments = split_segments(make_cohesion_segments(trend_segments, seconds_per_day))
-    cohesion_segments = calc_trend_segment_values(cohesion_segments, seconds_per_day)
-    assert len(cohesion_segments) == 22  # two extra segments because of the 23:59:60 -> 00:00:00 thing
-    assert [s.end_value/(60*60) for s in cohesion_segments] == [24, 22, 22, 19, 19, 19, 19, 19, 20, 18, 18, 18, 3, 3, 2, 2, 2, 2, 2, 3, 3, 4]
+def test_calc_trend_segment_values__cohesion(cohesion_segments_with_values):
+    assert len(cohesion_segments_with_values) == 22  # two extra segments because of the 23:59:60 -> 00:00:00 thing
+    assert [s.end_value/(60*60) for s in cohesion_segments_with_values] == [24, 22, 22, 19, 19, 19, 19, 19, 20, 18, 18, 18, 3, 3, 2, 2, 2, 2, 2, 3, 3, 4]
 
 
 @pytest.mark.skip
@@ -165,14 +184,38 @@ def test_draw_segment_chart_and_frame(segments_on_first, tmp_path):
     assert filecmp.cmp(fname, "test_data/correct_output/history.png", False)
 
 
-@pytest.mark.skip
-def test_draw_trend_chart_and_frame():
-    pass
+def test_draw_trend_chart_and_frame(trend_segments_with_values, trend_lut, tmp_path):
+    chart_params = draw_trend_chart(trend_segments_with_values, 1 * seconds_per_day, trend_lut, normalized=True)
+    chart_image, day_height, day_count, start_time, lut, key_min, key_max = chart_params
+
+    assert day_height == 6
+    assert day_count == 3
+    assert start_time == trend_segments_with_values[0].start
+    assert lut == trend_lut
+    assert key_min == 3/24
+    assert key_max == 20/24
+
+    fname = tmp_path / "test_draw_trend_chart_and_frame.png"
+    draw_chart_frame(*chart_params).save(fname)
+
+    assert filecmp.cmp(fname, "test_data/correct_output/trend_daily.png", False)
 
 
-@pytest.mark.skip
-def test_draw_cohesion_chart_and_frame():
-    pass
+def test_draw_cohesion_chart_and_frame(cohesion_segments_with_values, cohesion_lut, tmp_path):
+    chart_params = draw_trend_chart(cohesion_segments_with_values, 1 * seconds_per_day, cohesion_lut, normalized=True, extra_ignore_interval=seconds_per_day)
+    chart_image, day_height, day_count, start_time, lut, key_min, key_max = chart_params
+
+    assert day_height == 6
+    assert day_count == 3
+    assert start_time == cohesion_segments_with_values[0].start
+    assert lut == cohesion_lut
+    assert key_min == 2/24
+    assert key_max == 4/24
+
+    fname = tmp_path / "test_draw_cohesion_chart_and_frame.png"
+    draw_chart_frame(*chart_params, percentage=True).save(fname)
+
+    assert filecmp.cmp(fname, "test_data/correct_output/cohesion_daily.png", False)
 
 
 @pytest.mark.skip
@@ -194,8 +237,11 @@ def test_format_hours():
     assert format_hours(2.00)  == " 2:00"
     assert format_hours(0)     == " 0:00"
     assert format_hours(10)    == "10:00"
-    #assert format_hours(10.99) == "11:00"  #woops
+    assert format_hours(10.99) == "10:59"
+    assert format_hours(10.999) == "11:00"
     assert format_hours(22 + 37/60) == "22:37"
+    assert format_hours(18.6852) == "18:41"
+    assert format_hours(1.001) == " 1:00"
 
 
 def test_start_of_day():

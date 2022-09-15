@@ -20,7 +20,9 @@ from pprint import pprint as pp
 sys.stdout.reconfigure(line_buffering=True) # auto-flush print()
 
 
-colormap = mpl.cm.get_cmap("viridis").reversed()
+trend_colormap = mpl.cm.get_cmap("viridis").reversed()
+cohesion_colormap = mpl.cm.get_cmap("inferno")
+
 background_color = (192, 192, 192)
 grid_line_color = (192, 96, 96)
 
@@ -63,14 +65,15 @@ class TrendSegment (Segment):
         self.end_value   = end_value
     
     def __repr__(self):
-        return f"TrendSegment([{time.asctime(self.start)}] -> [{time.asctime(self.end)}] {self.trend.name} {self.start_value} -> {self.end_value})"
+        hours = "{:.2f} -> {:.2f}".format(self.start_value/3600, self.end_value/3600)
+        return f"TrendSegment([{time.asctime(self.start)}] -> [{time.asctime(self.end)}] {self.trend.name} {self.start_value} -> {self.end_value} ({hours}))"
     
     def as_tuple(self):
         return (self.start, self.end, self.trend, self.start_value, self.end_value)
 
 
 
-def main(outfolder, infiles):
+def main(outfolder, infiles):  # pragma: no cover
     print(f"input: {infiles}")
     print(f"output: {outfolder}/")
 
@@ -84,22 +87,21 @@ def main(outfolder, infiles):
 
     draw_chart_frame(*draw_segment_chart(split_off_segments)).save(f"{outfolder}/history.png")
 
-    lut = colormap_to_lut(colormap)
+    trend_lut = colormap_to_lut(trend_colormap)
+    cohesion_lut = colormap_to_lut(cohesion_colormap)
 
     trend_segments = {}
     for days,name in ((1, "daily"), (7, "weekly"), (14, "fortnightly"), (30, "monthly")):
-        print()
-        trend_segments[days] = calc_trend_segment_values(split_segments(make_trend_segments(events, days * seconds_per_day)))
-        draw_chart_frame(*draw_trend_chart(trend_segments[days], days * seconds_per_day, lut)).save(f"{outfolder}/{name}_trend.png")
+        interval = days * seconds_per_day
 
-    print()
-    cohesion_segments = calc_trend_segment_values(split_segments(make_cohesion_segments(trend_segments[1])), seconds_per_day)
-    with open(f"{outfolder}/cohesion_segments.txt", "w") as f:
-        for s in cohesion_segments:
-            f.write(str(s))
-            f.write("\n")
-    #draw_chart_frame(*draw_cohesion_chart(trend_segments[1], lut)).save(f"{outfolder}/cohesion.png")
-    draw_chart_frame(*draw_trend_chart(cohesion_segments, seconds_per_day, lut, normalized=False)).save(f"{outfolder}/cohesion.png")
+        print()
+        print(name)
+        trend_segments[days] = calc_trend_segment_values(split_segments(make_trend_segments(events, interval)))
+        draw_chart_frame(*draw_trend_chart(trend_segments[days], interval, trend_lut)).save(f"{outfolder}/trend_{name}.png")
+
+        print()
+        cohesion_segments = calc_trend_segment_values(split_segments(make_cohesion_segments(trend_segments[1], interval)), interval)
+        draw_chart_frame(*draw_trend_chart(cohesion_segments, interval, cohesion_lut, normalized=True, extra_ignore_interval=seconds_per_day), percentage=True).save(f"{outfolder}/cohesion_{name}.png")
 
     print()
     figs = draw_plots(events, off_segments, on_segments, trend_segments)
@@ -356,17 +358,16 @@ def draw_segment_chart(off_segments, width=720, day_height=6):
 
 
 
-def draw_trend_chart(trend_segments, trend_interval, lut, width=720, day_height=6, normalized=True):
+def draw_trend_chart(trend_segments, trend_interval, lut, width=720, day_height=6, normalized=True, *, extra_ignore_interval=0):
     print("drawing trend chart...")
 
-    def setup_function(segments, trend_interval, normalized):
+    def setup_function(segments, *, trend_interval, normalized, extra_ignore_interval):
         if normalized:
             trend_max = 0
             trend_min = trend_interval
             for s in segments:
-                trend_max = max(trend_max, s.start_value, s.end_value)
-
-                if time.mktime(s.start) >= time.mktime(segments[0].start) + trend_interval: # don't update minumum on incomplete averages
+                if time.mktime(s.start) >= time.mktime(segments[0].start) + trend_interval + extra_ignore_interval: # don't update on incomplete averages
+                    trend_max = max(trend_max, s.start_value, s.end_value)
                     trend_min = min(trend_min, s.start_value, s.end_value)
 
         else:
@@ -384,8 +385,8 @@ def draw_trend_chart(trend_segments, trend_interval, lut, width=720, day_height=
         return (setup, key_min, key_max)
 
 
-    def draw_function(draw, segment, coords, setup, lut, **kwargs):
-        if time.mktime(segment.start) < time.mktime(setup["start"]) + kwargs["trend_interval"]:
+    def draw_function(draw, segment, coords, setup, lut, *, trend_interval, normalized, extra_ignore_interval):
+        if time.mktime(segment.start) < time.mktime(setup["start"]) + trend_interval + extra_ignore_interval:
             return
         
         trend_min = setup["trend_min"]
@@ -396,13 +397,17 @@ def draw_trend_chart(trend_segments, trend_interval, lut, width=720, day_height=
 
         draw_gradient(draw, *coords, start_value, end_value, lut)
 
+    extra_args = {
+        "trend_interval" : trend_interval,
+        "normalized" : normalized,
+        "extra_ignore_interval" : extra_ignore_interval
+    }
+    return draw_chart(trend_segments, draw_function, setup_function, lut, width=width, day_height=day_height, **extra_args)
 
-    return draw_chart(trend_segments, draw_function, setup_function, lut, width=width, day_height=day_height, trend_interval=trend_interval, normalized=normalized)
 
 
-
-def draw_cohesion_chart(trend_segments, lut, width=720, day_height=6):
-    print("drawing cohesion chart...")
+def draw_direction_chart(trend_segments, lut, width=720, day_height=6):  # pragma: no cover -- debugging function
+    print("drawing direction chart...")
 
     def setup_function(segments):
         return (None, 0, 1)
@@ -442,19 +447,13 @@ def draw_gradient(draw, x1, y1, x2, y2, start_value, end_value, lut):
         for x in range(x1, x2+1):
             progress = (x - x1) / w
             value = progress * (end_value - start_value) + start_value
-            if value > 1:
-                color = (255, 255, 255)
-                print(value, color)
-            elif value < 0:
-                color = (0, 0, 0)
-                print(value, color)
-            else:
-                color = lut[round(255 * value)]
+            assert 0 <= value <= 1
+            color = lut[round(255 * value)]
 
             draw.rectangle((x, y1, x, y2), fill=color, outline=None, width=0)
 
 
-def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, key_min=None, key_max=None):
+def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, key_min=None, key_max=None, *, percentage=False):
     print("drawing chart frame...")
 
     first_date = time_to_date(start_time)
@@ -519,11 +518,11 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
         if i == 0:
             text = "midnight"
         elif 1 <= i <= 11:
-            text = "{}am".format(i)
+            text = f"{i}am"
         elif i == 12:
             text = "noon"
         else:
-            text = "{}pm".format(i-12)
+            text = f"{i-12}pm"
         draw.text((x, top_padding - text_inner_vpad), text, (0,0,0), font, "ms")
         draw.text((x, height - bottom_padding + text_inner_vpad), text, (0,0,0), font, "mt")
 
@@ -540,31 +539,49 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
         y2 = im.height - text_vbox - 1
         draw_gradient(draw, x1, y1, x2, y2, 0, 1, lut)
 
-        draw.text((x1, y2 + text_inner_vpad), format_hours(key_min*24), (0,0,0), font, "lt")
-        draw.text((x2, y2 + text_inner_vpad), format_hours(key_max*24), (0,0,0), font, "rt")
+        if percentage:
+            scale_range = 10
+            draw.text((x1, y2 + text_inner_vpad), "{:.2f}%".format(key_min * 100), (0,0,0), font, "lt")
+            draw.text((x2, y2 + text_inner_vpad), "{:.2f}%".format(key_max * 100), (0,0,0), font, "rt")
+        else:
+            scale_range = 24
+            draw.text((x1, y2 + text_inner_vpad), format_hours(key_min * scale_range), (0,0,0), font, "lt")
+            draw.text((x2, y2 + text_inner_vpad), format_hours(key_max * scale_range), (0,0,0), font, "rt")
 
         # grid and labels
-        hours_delta = (key_max - key_min) * 24
-        pixels_per_hour = chart_image.width / hours_delta
-        first_hour = math.ceil(key_min * 24)
-        if abs(first_hour - key_min * 24) < 1e-8: # fix for off-by-one error when starting on an integer
+        marker_delta = (key_max - key_min) * scale_range
+        pixels_per_marker = chart_image.width / marker_delta
+        
+        first_marker = math.ceil(key_min * scale_range)
+        if abs(first_marker - key_min * scale_range) < 1e-8: # fix for off-by-one error when starting on an integer
             print("integer start fix")
-            first_hour += 1
-        last_hour = math.floor(key_max * 24)
-        start_offset_hours = 1 - (key_min * 24) % 1
-        start_offset_pixels = start_offset_hours * pixels_per_hour + left_padding
+            first_marker += 1
+        
+        last_marker = math.floor(key_max * scale_range)
+        
+        start_offset_hours = 1 - (key_min * scale_range) % 1
+        start_offset_pixels = start_offset_hours * pixels_per_marker + left_padding
 
-        h_ = list(range(last_hour - first_hour + 1))
-        marker_x = [int(round(i * pixels_per_hour + start_offset_pixels)) for i in h_]
+        h_ = list(range(last_marker - first_marker + 1))
+        marker_x = [int(round(i * pixels_per_marker + start_offset_pixels)) for i in h_]
 
         for i,x in enumerate(marker_x):
+            if x > width - right_padding - 27:  # this is the closest a key marker is allowed to get to the right side
+                break
+
             for y in range(y1, y2, 2):
                 c = im.getpixel((x, y))
                 if c not in grid_color_lookup:
                     grid_color_lookup[c] = grid_color(c)
                 color = grid_color_lookup[c]
                 draw.point((x, y), color)
-            draw.text((x, y2 + text_inner_vpad), str(i + first_hour), (0,0,0), font, "mt")
+            
+            if percentage:
+                marker_text = f"{(i + first_marker) * scale_range}%"
+            else:
+                marker_text = str(i + first_marker)
+                
+            draw.text((x, y2 + text_inner_vpad), marker_text, (0,0,0), font, "mt")
 
     return im
 
@@ -586,11 +603,12 @@ def grid_color(c):
 
 
 def format_hours(t):
-    if t < 0:  #pragma: no cover
-        print("WARNING: negative t: {}. Setting to 0".format(t))
-        t = 0
+    assert t >= 0
     hours = int(t)
     minutes = t % 1 * 60
+    if round(minutes) == 60:
+        minutes = 0
+        hours += 1
     return "{:2.0f}:{:02.0f}".format(hours, minutes)
 
 
@@ -736,7 +754,7 @@ def struct_time_to_datetime(t):
     return datetime.datetime.fromtimestamp(time.mktime(t))
 
 
-if __name__ == "__main__":  #pragma: no cover
+if __name__ == "__main__":
     if len(sys.argv) == 1:
         # with no arguments, read input.txt for a list of arguments
         with open("input.txt") as f:

@@ -39,7 +39,7 @@ This is an example `history.png` showing 90 days of artificial data:
 
 ### Trend
 
-The `*_trend.png` files show the same data, but presented differently. The chart
+The `trend_*.png` files show the same data, but presented differently. The chart
 layout is the same as `history.png`, but the color at each location represents
 the average time the lamps have been *on* per day in the specified previous
 interval (1, 7, 14, and 30 days for `daily`, `weekly`, `fortnightly`, and
@@ -47,12 +47,12 @@ interval (1, 7, 14, and 30 days for `daily`, `weekly`, `fortnightly`, and
 each color represents. Lighter colors mean more time *on*, and darker colors
 mean more time *off*. Note that the scale is different for each chart.
 
-This is an example `weekly_trend.png` showing the same 90 days of artificial
+This is an example `trend_weekly.png` showing the same 90 days of artificial
 data (note the blank space at the top of the chart, because it has not yet been
 a week since the start of the data, so there isn't a valid weekly average for
 those times):
 
-![weekly trend](example_output/weekly_trend.png)
+![weekly trend](example_output/trend_weekly.png)
 
 ### Plots
 

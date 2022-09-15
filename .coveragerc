@@ -1,0 +1,10 @@
+[run]
+command_line = -m pytest
+include = render.py
+branch = true
+
+[report]
+exclude_lines = 
+    pragma: no cover
+    def __repr__\(self\):
+    if __name__ == .__main__.:
