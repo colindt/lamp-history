@@ -7,7 +7,6 @@ import time
 import datetime
 import math
 import enum
-import collections
 
 from PIL import Image, ImageDraw, ImageFont
 import matplotlib.pyplot as plt
@@ -91,6 +90,7 @@ def main(outfolder, infiles):  # pragma: no cover
     cohesion_lut = colormap_to_lut(cohesion_colormap)
 
     trend_segments = {}
+    cohesion_segments = {}
     for days,name in ((1, "daily"), (7, "weekly"), (14, "fortnightly"), (30, "monthly")):
         interval = days * seconds_per_day
 
@@ -100,11 +100,11 @@ def main(outfolder, infiles):  # pragma: no cover
         draw_chart_frame(*draw_trend_chart(trend_segments[days], interval, trend_lut)).save(f"{outfolder}/trend_{name}.png")
 
         print()
-        cohesion_segments = calc_trend_segment_values(split_segments(make_cohesion_segments(trend_segments[1], interval)), interval)
-        draw_chart_frame(*draw_trend_chart(cohesion_segments, interval, cohesion_lut, normalized=True, extra_ignore_interval=seconds_per_day), percentage=True).save(f"{outfolder}/cohesion_{name}.png")
+        cohesion_segments[days] = calc_trend_segment_values(split_segments(make_cohesion_segments(trend_segments[1], interval)), interval)
+        draw_chart_frame(*draw_trend_chart(cohesion_segments[days], interval, cohesion_lut, normalized=True, extra_ignore_interval=seconds_per_day), percentage=True).save(f"{outfolder}/cohesion_{name}.png")
 
     print()
-    figs = draw_plots(events, off_segments, on_segments, trend_segments)
+    figs = draw_plots(events, off_segments, on_segments, trend_segments, cohesion_segments)
     for i,fig in enumerate(figs):
         fig.savefig(f"{outfolder}/plots{i+1}.png")
         fig.savefig(f"{outfolder}/plots{i+1}.pdf")
@@ -612,7 +612,7 @@ def format_hours(t):
     return "{:2.0f}:{:02.0f}".format(hours, minutes)
 
 
-def draw_plots(events, off_segments, on_segments, trend_segments):
+def draw_plots(events, off_segments, on_segments, trend_segments, cohesion_segments):
     print("drawing plots...")
 
     advanced_plots = True
@@ -713,13 +713,52 @@ def draw_plots(events, off_segments, on_segments, trend_segments):
     w = 11
     h = 8.5
 
-    fig2, ax = plt.subplots(1, 1, figsize=(w,h), tight_layout=True)
+    fig2, axs = plt.subplots(2, 1, figsize=(w,h), tight_layout=True)
 
-    
+    full_range = False
+
+    x5 = {}
+    y5 = {}
     for k in trend_segments:
-        x5 = [datetime.datetime.fromtimestamp(time.mktime(i.start)) for i in trend_segments[k]]
-        y5 = [i.start_value/(60*60*k) for i in trend_segments[k]]
-        ax.plot(x5, y5, linewidth=1)
+        x5[k] = []
+        y5[k] = []
+        for s in trend_segments[k]:
+            if time.mktime(s.start) < time.mktime(trend_segments[k][0].start) + (k * seconds_per_day):
+                continue
+            x5[k].append(datetime.datetime.fromtimestamp(time.mktime(s.start)))
+            y5[k].append(s.start_value / (k * 60 * 60))
+        linewidth = 0.1 if k == 1 else 1
+        axs[0].plot(x5[k], y5[k], linewidth=linewidth)
+    axs[0].set_title("Trend")
+    axs[0].set_xlim(x5[1][0], x5[1][-1])
+    if full_range or not y5[7]:
+        axs[0].set_ylim(0, 24)
+    else:
+        axs[0].set_ylim(math.floor(min(y5[7])), math.ceil(max(y5[7])))
+    axs[0].xaxis.set_minor_locator(matplotlib.dates.MonthLocator())
+    axs[0].yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4 if full_range else 1))
+    
+    x6 = {}
+    y6  ={}
+    for k in cohesion_segments:
+        x6[k] = []
+        y6[k] = []
+        for s in cohesion_segments[k]:
+            if time.mktime(s.start) < time.mktime(cohesion_segments[k][0].start) + ((k + 1) * seconds_per_day):
+                continue
+            x6[k].append(datetime.datetime.fromtimestamp(time.mktime(s.start)))
+            y6[k].append((s.start_value * 100) / (k * seconds_per_day))
+        linewidth = 0.2 if k == 1 else 1
+        axs[1].plot(x6[k], y6[k], linewidth=linewidth)
+    axs[1].set_title("Cohesion")
+    axs[1].set_xlim(x6[1][0], x6[1][-1])
+    if full_range or not y6[7]:
+        axs[1].set_ylim(0, 100)
+    else:
+        axs[1].set_ylim(min(y6[7]), max(y6[7]))
+    axs[1].xaxis.set_minor_locator(matplotlib.dates.MonthLocator())
+    axs[1].yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(10))
+    axs[1].yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter())
 
     return (fig1, fig2)
 
