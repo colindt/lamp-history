@@ -23,7 +23,7 @@ trend_colormap = mpl.cm.get_cmap("viridis").reversed()
 cohesion_colormap = mpl.cm.get_cmap("inferno")
 
 background_color = (192, 192, 192)
-grid_line_color = (192, 96, 96)
+grid_line_color = (255, 255, 255)
 
 seconds_per_day = 24 * 60 * 60
 
@@ -97,14 +97,14 @@ def main(outfolder, infiles):  # pragma: no cover
         print()
         print(name)
         trend_segments[days] = calc_trend_segment_values(split_segments(make_trend_segments(events, interval)))
-        draw_chart_frame(*draw_trend_chart(trend_segments[days], interval, trend_lut)).save(f"{outfolder}/trend_{name}.png")
+        draw_chart_frame(*draw_trend_chart(trend_segments[days], interval, trend_lut), gridcolor=grid_line_color).save(f"{outfolder}/trend_{name}.png")
 
         print()
         cohesion_segments[days] = calc_trend_segment_values(split_segments(make_cohesion_segments(trend_segments[1], interval)), interval)
-        draw_chart_frame(*draw_trend_chart(cohesion_segments[days], interval, cohesion_lut, normalized=True, extra_ignore_interval=seconds_per_day), percentage=True).save(f"{outfolder}/cohesion_{name}.png")
+        draw_chart_frame(*draw_trend_chart(cohesion_segments[days], interval, cohesion_lut, normalized=True, extra_ignore_interval=seconds_per_day), gridcolor=grid_line_color, percentage=True).save(f"{outfolder}/cohesion_{name}.png")
 
     print()
-    figs = draw_plots(events, off_segments, on_segments, trend_segments, cohesion_segments)
+    figs = draw_plots(off_segments, on_segments, trend_segments, cohesion_segments)
     for i,fig in enumerate(figs):
         fig.savefig(f"{outfolder}/plots{i+1}.png")
         fig.savefig(f"{outfolder}/plots{i+1}.pdf")
@@ -150,7 +150,7 @@ def make_segments(events):
         if state == OnOff.on:
             if e.state == OnOff.on:
                 if segment_start:  #pragma: no cover
-                    print("warning: state transition from on to on:", segment_start.time, e.time)
+                    print("warning: state transition from on to on:", segment_start, e)
             elif e.state == OnOff.off:
                 if t1:
                     on_segments.append(Segment(t1, t2))
@@ -158,7 +158,7 @@ def make_segments(events):
                 segment_start = e
                 state = OnOff.off
             else:  #pragma: no cover
-                raise ValueError("invalid event state '{}'".format(e["state"]))
+                raise ValueError("invalid event state '{}'".format(e.state))
         elif state == OnOff.off:
             t1 = segment_start.time
             t2 = e.time
@@ -169,7 +169,7 @@ def make_segments(events):
                 segment_start = e
                 state = OnOff.on
             elif e.state == OnOff.off:  #pragma: no cover
-                print("warning: state transition from off to off", t1, t2)
+                print("warning: state transition from off to off", segment_start, e)
             else:  #pragma: no cover
                 raise ValueError("invalid event state '{}'".format(e.state))
         else:  #pragma: no cover
@@ -453,7 +453,7 @@ def draw_gradient(draw, x1, y1, x2, y2, start_value, end_value, lut):
             draw.rectangle((x, y1, x, y2), fill=color, outline=None, width=0)
 
 
-def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, key_min=None, key_max=None, *, percentage=False):
+def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, key_min=None, key_max=None, *, gridcolor=(128,128,128), percentage=False):
     print("drawing chart frame...")
 
     first_date = time_to_date(start_time)
@@ -462,17 +462,11 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
 
     chart_draw = ImageDraw.Draw(chart_image)
 
-    grid_color_lookup = {} # matplotlib colorspace conversion is slow, so we're only doing each conversion once
-
     # hour grid
     for i in range(24):
         x = i * 60 * 60 * chart_image.width / seconds_per_day
         for y in range(0, day_height * day_count, 2):
-            c = chart_image.getpixel((x, y))
-            if c not in grid_color_lookup:
-                grid_color_lookup[c] = grid_color(c)
-            color = grid_color_lookup[c]
-            chart_draw.point((x, y), color)
+            chart_draw.point((x, y), gridcolor)
 
     # week grid
     max_date_textlength = 0
@@ -482,14 +476,7 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
 
         y = i * day_height
         for x in range(0, chart_image.width, 2):
-            # don't invert twice (handle grid line intersections)
-            if x % (60 * 60 * chart_image.width / seconds_per_day) == 0:
-                continue
-            c = chart_image.getpixel((x, y))
-            if c not in grid_color_lookup:
-                grid_color_lookup[c] = grid_color(c)
-            color = grid_color_lookup[c]
-            chart_draw.point((x, y), color)
+            chart_draw.point((x, y), gridcolor)
 
     text_vbox = 18
     text_outer_hpad = 8
@@ -570,11 +557,7 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
                 break
 
             for y in range(y1, y2, 2):
-                c = im.getpixel((x, y))
-                if c not in grid_color_lookup:
-                    grid_color_lookup[c] = grid_color(c)
-                color = grid_color_lookup[c]
-                draw.point((x, y), color)
+                draw.point((x, y), gridcolor)
             
             if percentage:
                 marker_text = f"{(i + first_marker) * scale_range}%"
@@ -584,22 +567,6 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
             draw.text((x, y2 + text_inner_vpad), marker_text, (0,0,0), font, "mt")
 
     return im
-
-
-def grid_color(c):
-    # figure out what color a grid line should be based
-    # on what it's going on top of for good contrast
-    h, s, v = mpl.colors.rgb_to_hsv([i/255 for i in c])
-
-    h += 0.5
-    if h > 1:
-        h -= 1
-
-    v += 0.5
-    if v > 1:
-        v -= 1
-
-    return tuple(int(round(i*255)) for i in mpl.colors.hsv_to_rgb((h, s, v)))
 
 
 def format_hours(t):
@@ -612,28 +579,33 @@ def format_hours(t):
     return "{:2.0f}:{:02.0f}".format(hours, minutes)
 
 
-def draw_plots(events, off_segments, on_segments, trend_segments, cohesion_segments):
+def draw_plots(off_segments, on_segments, trend_segments, cohesion_segments):
     print("drawing plots...")
+    fig1 = draw_plots_page1(off_segments, on_segments, trend_segments)
+    fig2 = draw_plots_page2(trend_segments, cohesion_segments)
+    return (fig1, fig2)
 
+
+def draw_plots_page1(off_segments, on_segments, trend_segments):
     advanced_plots = True
 
-    # page 1
     w = 8.5
     h = 11
 
     if advanced_plots:
-        fig1, axs = plt.subplots(3, 2, figsize=(w,h), tight_layout=True)
+        fig, axs = plt.subplots(3, 2, figsize=(w,h), tight_layout=True)
     else:
-        fig1, axs = plt.subplots(2, 1, figsize=(w,h), tight_layout={"rect":(1.25/w, 0.6/h, 7.25/w, 10.5/h), "h_pad":3}, squeeze=False)
+        fig, axs = plt.subplots(2, 1, figsize=(w,h), tight_layout={"rect":(1.25/w, 0.6/h, 7.25/w, 10.5/h), "h_pad":3}, squeeze=False)
 
     off_segment_lengths = segment_length_hours(off_segments)
     on_segment_lengths = segment_length_hours(on_segments)
 
+    ax = axs[0,0]
     bins = [i/2 for i in range(0, math.ceil(max(off_segment_lengths) * 2) + 1)] # bins in 30 minute intervals
-    axs[0,0].hist(off_segment_lengths, weights=off_segment_lengths, bins=bins, density=True)
-    axs[0,0].set_title("Weighted Off Segments")
-    axs[0,0].xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-    axs[0,0].set_xlabel("hours")
+    ax.hist(off_segment_lengths, weights=off_segment_lengths, bins=bins, density=True)
+    ax.set_title("Weighted Off Segments")
+    ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    ax.set_xlabel("hours")
 
     if advanced_plots:
         ax = axs[0,1]
@@ -671,52 +643,60 @@ def draw_plots(events, off_segments, on_segments, trend_segments, cohesion_segme
 
         scattersize = 8
 
-        axs[1,0].scatter(x1, y1, s=scattersize, c=c1)
-        axs[1,0].set_title("Off vs Next On Segment")
-        axs[1,0].xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-        axs[1,0].yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
-        axs[1,0].set_xlabel("Off Segment Length")
-        axs[1,0].set_ylabel("Next On Segment Length")
-        axs[1,0].set_xlim(axs[0,0].get_xlim())
+        ax = axs[1,0]
+        ax.scatter(x1, y1, s=scattersize, c=c1)
+        ax.set_title("Off vs Next On Segment")
+        ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+        ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
+        ax.set_xlabel("Off Segment Length")
+        ax.set_ylabel("Next On Segment Length")
+        ax.set_xlim(axs[0,0].get_xlim())
 
-        axs[1,1].scatter(x2, y2, s=scattersize, c=c2)
-        axs[1,1].set_title("On vs Next Off Segment")
-        axs[1,1].xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
-        axs[1,1].yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-        axs[1,1].set_xlabel("On Segment Length")
-        axs[1,1].set_ylabel("Next Off Segment Length")
-        axs[1,1].set_xlim(axs[0,1].get_xlim())
+        ax = axs[1,1]
+        ax.scatter(x2, y2, s=scattersize, c=c2)
+        ax.set_title("On vs Next Off Segment")
+        ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
+        ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+        ax.set_xlabel("On Segment Length")
+        ax.set_ylabel("Next Off Segment Length")
+        ax.set_xlim(axs[0,1].get_xlim())
 
         trend_values = {}
         for s in trend_segments[1]:
             trend_values[time.mktime(s.start)] = s.start_value
 
+        ax = axs[2,0]
         x3 = [trend_values[time.mktime(i.start)]/(60*60) for i in off_segments]
         c3 = [time.mktime(i.start) for i in off_segments]
-        axs[2,0].scatter(x3, off_segment_lengths, s=scattersize, c=c3)
-        axs[2,0].set_title("Previous 24 Hours vs Off Segment Length")
-        axs[2,0].xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
-        axs[2,0].yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-        axs[2,0].set_xlabel("Time Off in the Last Day")
-        axs[2,0].set_ylabel("Subsequent Off Segment Length")
+        ax.scatter(x3, off_segment_lengths, s=scattersize, c=c3)
+        ax.set_title("Previous 24 Hours vs Off Segment Length")
+        ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
+        ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+        ax.set_xlabel("Time Off in the Last Day")
+        ax.set_ylabel("Subsequent Off Segment Length")
 
+        ax = axs[2,1]
         x4 = [trend_values[time.mktime(i.start)]/(60*60) for i in on_segments]
         c4 = [time.mktime(i.start) for i in on_segments]
-        axs[2,1].scatter(x4, on_segment_lengths, s=scattersize, c=c4)
-        axs[2,1].set_title("Previous 24 Hours vs On Segment Length")
-        axs[2,1].xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
-        axs[2,1].yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
-        axs[2,1].set_xlabel("Time Off in the Last Day")
-        axs[2,1].set_ylabel("Subsequent On Segment Length")
+        ax.scatter(x4, on_segment_lengths, s=scattersize, c=c4)
+        ax.set_title("Previous 24 Hours vs On Segment Length")
+        ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
+        ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
+        ax.set_xlabel("Time Off in the Last Day")
+        ax.set_ylabel("Subsequent On Segment Length")
     
-    # page 2
+    return fig
+
+
+def draw_plots_page2(trend_segments, cohesion_segments):
     w = 11
     h = 8.5
 
-    fig2, axs = plt.subplots(2, 1, figsize=(w,h), tight_layout=True)
+    fig, axs = plt.subplots(2, 1, figsize=(w,h), tight_layout=True)
 
     full_range = False
 
+    ax = axs[0]
     x5 = {}
     y5 = {}
     for k in trend_segments:
@@ -728,16 +708,17 @@ def draw_plots(events, off_segments, on_segments, trend_segments, cohesion_segme
             x5[k].append(datetime.datetime.fromtimestamp(time.mktime(s.start)))
             y5[k].append(s.start_value / (k * 60 * 60))
         linewidth = 0.1 if k == 1 else 1
-        axs[0].plot(x5[k], y5[k], linewidth=linewidth)
-    axs[0].set_title("Trend")
-    axs[0].set_xlim(x5[1][0], x5[1][-1])
+        ax.plot(x5[k], y5[k], linewidth=linewidth)
+    ax.set_title("Trend")
+    ax.set_xlim(x5[1][0], x5[1][-1])
     if full_range or not y5[7]:
-        axs[0].set_ylim(0, 24)
+        ax.set_ylim(0, 24)
     else:
-        axs[0].set_ylim(math.floor(min(y5[7])), math.ceil(max(y5[7])))
-    axs[0].xaxis.set_minor_locator(matplotlib.dates.MonthLocator())
-    axs[0].yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4 if full_range else 1))
+        ax.set_ylim(math.floor(min(y5[7])), math.ceil(max(y5[7])))
+    ax.xaxis.set_minor_locator(matplotlib.dates.MonthLocator())
+    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4 if full_range else 1))
     
+    ax = axs[1]
     x6 = {}
     y6  ={}
     for k in cohesion_segments:
@@ -749,18 +730,18 @@ def draw_plots(events, off_segments, on_segments, trend_segments, cohesion_segme
             x6[k].append(datetime.datetime.fromtimestamp(time.mktime(s.start)))
             y6[k].append((s.start_value * 100) / (k * seconds_per_day))
         linewidth = 0.2 if k == 1 else 1
-        axs[1].plot(x6[k], y6[k], linewidth=linewidth)
-    axs[1].set_title("Cohesion")
-    axs[1].set_xlim(x6[1][0], x6[1][-1])
+        ax.plot(x6[k], y6[k], linewidth=linewidth)
+    ax.set_title("Cohesion")
+    ax.set_xlim(x6[1][0], x6[1][-1])
     if full_range or not y6[7]:
-        axs[1].set_ylim(0, 100)
+        ax.set_ylim(0, 100)
     else:
-        axs[1].set_ylim(min(y6[7]), max(y6[7]))
-    axs[1].xaxis.set_minor_locator(matplotlib.dates.MonthLocator())
-    axs[1].yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(10))
-    axs[1].yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter())
+        ax.set_ylim(min(y6[7]), max(y6[7]))
+    ax.xaxis.set_minor_locator(matplotlib.dates.MonthLocator())
+    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(10))
+    ax.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter())
 
-    return (fig1, fig2)
+    return fig
 
 
 def segment_length_hours(segments):

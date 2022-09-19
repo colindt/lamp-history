@@ -196,7 +196,7 @@ def test_draw_trend_chart_and_frame(trend_segments_with_values, trend_lut, tmp_p
     assert key_max == 20/24
 
     fname = tmp_path / "test_draw_trend_chart_and_frame.png"
-    draw_chart_frame(*chart_params).save(fname)
+    draw_chart_frame(*chart_params, gridcolor=grid_line_color).save(fname)
 
     assert filecmp.cmp(fname, "test_data/correct_output/trend_daily.png", False)
 
@@ -213,7 +213,7 @@ def test_draw_cohesion_chart_and_frame(cohesion_segments_with_values, cohesion_l
     assert key_max == 4/24
 
     fname = tmp_path / "test_draw_cohesion_chart_and_frame.png"
-    draw_chart_frame(*chart_params, percentage=True).save(fname)
+    draw_chart_frame(*chart_params, gridcolor=grid_line_color, percentage=True).save(fname)
 
     assert filecmp.cmp(fname, "test_data/correct_output/cohesion_daily.png", False)
 
