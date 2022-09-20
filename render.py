@@ -443,14 +443,24 @@ def draw_gradient(draw, x1, y1, x2, y2, start_value, end_value, lut):
         draw.rectangle((x1, y1, x2, y2), fill=lut[round(255 * start_value)], outline=None, width=0)
     else:
         w = x2 - x1 + 1
-        h = y2 - y1 + 1
+
+        x_a = x1
+        x_b = x1
+        prev_color = None
         for x in range(x1, x2+1):
             progress = (x - x1) / w
             value = progress * (end_value - start_value) + start_value
             assert 0 <= value <= 1
             color = lut[round(255 * value)]
 
-            draw.rectangle((x, y1, x, y2), fill=color, outline=None, width=0)
+            if color == prev_color:
+                x_b = x
+            else:
+                draw.rectangle((x_a, y1, x_b, y2), fill=prev_color, outline=None, width=0)  # slight speedup by batching together lines of the same color
+                x_a = x
+                x_b = x
+                prev_color = color
+        draw.rectangle((x_a, y1, x_b, y2), fill=prev_color, outline=None, width=0)
 
 
 def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, key_min=None, key_max=None, *, gridcolor=(128,128,128), percentage=False):
@@ -462,11 +472,12 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
 
     chart_draw = ImageDraw.Draw(chart_image)
 
+    gridcoords = []
     # hour grid
     for i in range(24):
         x = i * 60 * 60 * chart_image.width / seconds_per_day
         for y in range(0, day_height * day_count, 2):
-            chart_draw.point((x, y), gridcolor)
+            gridcoords.append((x, y))
 
     # week grid
     max_date_textlength = 0
@@ -476,7 +487,9 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
 
         y = i * day_height
         for x in range(0, chart_image.width, 2):
-            chart_draw.point((x, y), gridcolor)
+            gridcoords.append((x, y))
+    
+    chart_draw.point(gridcoords, gridcolor)  # slight speedup by drawing all the points at once
 
     text_vbox = 18
     text_outer_hpad = 8
@@ -552,12 +565,13 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
         h_ = list(range(last_marker - first_marker + 1))
         marker_x = [int(round(i * pixels_per_marker + start_offset_pixels)) for i in h_]
 
+        gridcoords = []
         for i,x in enumerate(marker_x):
             if x > width - right_padding - 27:  # this is the closest a key marker is allowed to get to the right side
                 break
 
             for y in range(y1, y2, 2):
-                draw.point((x, y), gridcolor)
+                gridcoords.append((x, y))
             
             if percentage:
                 marker_text = f"{(i + first_marker) * scale_range}%"
@@ -565,6 +579,8 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
                 marker_text = str(i + first_marker)
                 
             draw.text((x, y2 + text_inner_vpad), marker_text, (0,0,0), font, "mt")
+        
+        draw.point(gridcoords, gridcolor)
 
     return im
 

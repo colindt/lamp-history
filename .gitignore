@@ -5,6 +5,7 @@ __pycache__
 *.png
 *.pdf
 *.svg
+*.dat
 
 !LICENSE.txt
 !requirements.txt
