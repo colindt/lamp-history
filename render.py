@@ -27,6 +27,13 @@ grid_line_color = (255, 255, 255)
 
 seconds_per_day = 24 * 60 * 60
 
+intervals = {
+    1  : "daily",
+    7  : "weekly",
+    14 : "fortnightly",
+    30 : "monthly",
+}
+
 Trend = enum.IntEnum("Trend", {"rising":1, "falling":-1, "steady":0})
 OnOff = enum.Enum("OnOff", {"on":1, "off":0})
 
@@ -91,7 +98,7 @@ def main(outfolder, infiles):  # pragma: no cover
 
     trend_segments = {}
     cohesion_segments = {}
-    for days,name in ((1, "daily"), (7, "weekly"), (14, "fortnightly"), (30, "monthly")):
+    for days,name in intervals.items():
         interval = days * seconds_per_day
 
         print()
@@ -724,15 +731,17 @@ def draw_plots_page2(trend_segments, cohesion_segments):
             x5[k].append(datetime.datetime.fromtimestamp(time.mktime(s.start)))
             y5[k].append(s.start_value / (k * 60 * 60))
         linewidth = 0.1 if k == 1 else 1
-        ax.plot(x5[k], y5[k], linewidth=linewidth)
+        ax.plot(x5[k], y5[k], linewidth=linewidth, label=intervals[k])
     ax.set_title("Trend")
     ax.set_xlim(x5[1][0], x5[1][-1])
     if full_range or not y5[7]:
         ax.set_ylim(0, 24)
     else:
         ax.set_ylim(math.floor(min(y5[7])), math.ceil(max(y5[7])))
+    ax.set_ylabel("Time Off")
     ax.xaxis.set_minor_locator(matplotlib.dates.MonthLocator())
     ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4 if full_range else 1))
+    ax.legend(loc="upper right")
     
     ax = axs[1]
     x6 = {}
@@ -746,7 +755,7 @@ def draw_plots_page2(trend_segments, cohesion_segments):
             x6[k].append(datetime.datetime.fromtimestamp(time.mktime(s.start)))
             y6[k].append((s.start_value * 100) / (k * seconds_per_day))
         linewidth = 0.2 if k == 1 else 1
-        ax.plot(x6[k], y6[k], linewidth=linewidth)
+        ax.plot(x6[k], y6[k], linewidth=linewidth, label=intervals[k])
     ax.set_title("Cohesion")
     ax.set_xlim(x6[1][0], x6[1][-1])
     if full_range or not y6[7]:
@@ -756,6 +765,7 @@ def draw_plots_page2(trend_segments, cohesion_segments):
     ax.xaxis.set_minor_locator(matplotlib.dates.MonthLocator())
     ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(10))
     ax.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter())
+    ax.legend(loc="upper right")
 
     return fig
 
