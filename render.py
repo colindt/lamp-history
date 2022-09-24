@@ -623,22 +623,8 @@ def draw_plots_page1(off_segments, on_segments, trend_segments):
     off_segment_lengths = segment_length_hours(off_segments)
     on_segment_lengths = segment_length_hours(on_segments)
 
-    ax = axs[0,0]
-    bins = [i/2 for i in range(0, math.ceil(max(off_segment_lengths) * 2) + 1)] # bins in 30 minute intervals
-    ax.hist(off_segment_lengths, weights=off_segment_lengths, bins=bins, density=True)
-    ax.set_title("Weighted Off Segments")
-    ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-    ax.set_xlabel("hours")
-
-    if advanced_plots:
-        ax = axs[0,1]
-    else:
-        ax = axs[1,0]
-    bins = range(0, math.ceil(max(on_segment_lengths)) + 1, 2) # bins in 2 hour intervals
-    ax.hist(on_segment_lengths, weights=on_segment_lengths, bins=bins, density=True)
-    ax.set_title("Weighted On Segments")
-    ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
-    ax.set_xlabel("hours")
+    draw_plot_off_histogram(axs[0,0], off_segment_lengths)
+    draw_plot_on_histogram(axs[0,1] if advanced_plots else axs[1,0], on_segment_lengths)
 
     if advanced_plots:
         n = min(len(off_segments), len(on_segments))
@@ -662,51 +648,19 @@ def draw_plots_page1(off_segments, on_segments, trend_segments):
             y2 = off_segment_lengths[:n]
             c2 = [time.mktime(i.start) for i in off_segments[:n]]
         else:
-            print("WARNING: first segments don't line up")
+            print("ERROR: first segments don't line up")
 
         scattersize = 8
 
-        ax = axs[1,0]
-        ax.scatter(x1, y1, s=scattersize, c=c1)
-        ax.set_title("Off vs Next On Segment")
-        ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-        ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
-        ax.set_xlabel("Off Segment Length")
-        ax.set_ylabel("Next On Segment Length")
-        ax.set_xlim(axs[0,0].get_xlim())
-
-        ax = axs[1,1]
-        ax.scatter(x2, y2, s=scattersize, c=c2)
-        ax.set_title("On vs Next Off Segment")
-        ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
-        ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-        ax.set_xlabel("On Segment Length")
-        ax.set_ylabel("Next Off Segment Length")
-        ax.set_xlim(axs[0,1].get_xlim())
+        draw_plot_off_vs_next_on_scatter(axs[1,0], x1, y1, scattersize, c1, axs[0,0].get_xlim())
+        draw_plot_on_vs_next_off_scatter(axs[1,1], x2, y2, scattersize, c2, axs[0,1].get_xlim())
 
         trend_values = {}
         for s in trend_segments[1]:
             trend_values[time.mktime(s.start)] = s.start_value
 
-        ax = axs[2,0]
-        x3 = [trend_values[time.mktime(i.start)]/(60*60) for i in off_segments]
-        c3 = [time.mktime(i.start) for i in off_segments]
-        ax.scatter(x3, off_segment_lengths, s=scattersize, c=c3)
-        ax.set_title("Previous 24 Hours vs Off Segment Length")
-        ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
-        ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
-        ax.set_xlabel("Time Off in the Last Day")
-        ax.set_ylabel("Subsequent Off Segment Length")
-
-        ax = axs[2,1]
-        x4 = [trend_values[time.mktime(i.start)]/(60*60) for i in on_segments]
-        c4 = [time.mktime(i.start) for i in on_segments]
-        ax.scatter(x4, on_segment_lengths, s=scattersize, c=c4)
-        ax.set_title("Previous 24 Hours vs On Segment Length")
-        ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
-        ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
-        ax.set_xlabel("Time Off in the Last Day")
-        ax.set_ylabel("Subsequent On Segment Length")
+        draw_plot_day_vs_off_scatter(axs[2,0], trend_values, off_segments, off_segment_lengths, scattersize)
+        draw_plot_day_vs_on_scatter(axs[2,1], trend_values, on_segments, on_segment_lengths, scattersize)
     
     return fig
 
@@ -719,55 +673,120 @@ def draw_plots_page2(trend_segments, cohesion_segments):
 
     full_range = False
 
-    ax = axs[0]
-    x5 = {}
-    y5 = {}
+    draw_plot_trend_line(axs[0], trend_segments, full_range)
+    draw_plot_cohesion_line(axs[1], cohesion_segments, full_range)
+
+    return fig
+
+
+def draw_plot_off_histogram(ax, off_segment_lengths):
+    bins = [i/2 for i in range(0, math.ceil(max(off_segment_lengths) * 2) + 1)] # bins in 30 minute intervals
+    ax.hist(off_segment_lengths, weights=off_segment_lengths, bins=bins, density=True)
+    ax.set_title("Weighted Off Segments")
+    ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    ax.set_xlabel("hours")
+
+
+def draw_plot_on_histogram(ax, on_segment_lengths):
+    bins = range(0, math.ceil(max(on_segment_lengths)) + 1, 2) # bins in 2 hour intervals
+    ax.hist(on_segment_lengths, weights=on_segment_lengths, bins=bins, density=True)
+    ax.set_title("Weighted On Segments")
+    ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
+    ax.set_xlabel("hours")
+
+
+def draw_plot_off_vs_next_on_scatter(ax, x, y, s, c, xlim):
+    ax.scatter(x, y, s=s, c=c)
+    ax.set_title("Off vs Next On Segment")
+    ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
+    ax.set_xlabel("Off Segment Length")
+    ax.set_ylabel("Next On Segment Length")
+    ax.set_xlim(xlim)
+
+
+def draw_plot_on_vs_next_off_scatter(ax, x, y, s, c, xlim):
+    ax.scatter(x, y, s=s, c=c)
+    ax.set_title("On vs Next Off Segment")
+    ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
+    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    ax.set_xlabel("On Segment Length")
+    ax.set_ylabel("Next Off Segment Length")
+    ax.set_xlim(xlim)
+
+
+def draw_plot_day_vs_off_scatter(ax, trend_values, off_segments, off_segment_lengths, s):
+    x = [trend_values[time.mktime(i.start)]/(60*60) for i in off_segments]
+    c = [time.mktime(i.start) for i in off_segments]
+    ax.scatter(x, off_segment_lengths, s=s, c=c)
+    ax.set_title("Previous 24 Hours vs Off Segment Length")
+    ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
+    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    ax.set_xlabel("Time Off in the Last Day")
+    ax.set_ylabel("Subsequent Off Segment Length")
+
+
+def draw_plot_day_vs_on_scatter(ax, trend_values, on_segments, on_segment_lengths, s):
+    x = [trend_values[time.mktime(i.start)]/(60*60) for i in on_segments]
+    c = [time.mktime(i.start) for i in on_segments]
+    ax.scatter(x, on_segment_lengths, s=s, c=c)
+    ax.set_title("Previous 24 Hours vs On Segment Length")
+    ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
+    ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
+    ax.set_xlabel("Time Off in the Last Day")
+    ax.set_ylabel("Subsequent On Segment Length")
+
+
+def draw_plot_trend_line(ax, trend_segments, full_range=False):
+    x = {}
+    y = {}
     for k in trend_segments:
-        x5[k] = []
-        y5[k] = []
+        x[k] = []
+        y[k] = []
         for s in trend_segments[k]:
             if time.mktime(s.start) < time.mktime(trend_segments[k][0].start) + (k * seconds_per_day):
                 continue
-            x5[k].append(datetime.datetime.fromtimestamp(time.mktime(s.start)))
-            y5[k].append(s.start_value / (k * 60 * 60))
+            x[k].append(datetime.datetime.fromtimestamp(time.mktime(s.start)))
+            y[k].append(s.start_value / (k * 60 * 60))
         linewidth = 0.1 if k == 1 else 1
-        ax.plot(x5[k], y5[k], linewidth=linewidth, label=intervals[k])
+        ax.plot(x[k], y[k], linewidth=linewidth, label=intervals[k])
     ax.set_title("Trend")
-    ax.set_xlim(x5[1][0], x5[1][-1])
-    if full_range or not y5[7]:
+    ax.set_xlim(x[1][0], x[1][-1])
+    first_interesting_line = list(intervals.keys())[1]
+    if full_range or not y[first_interesting_line]:
         ax.set_ylim(0, 24)
     else:
-        ax.set_ylim(math.floor(min(y5[7])), math.ceil(max(y5[7])))
+        ax.set_ylim(math.floor(min(y[first_interesting_line])), math.ceil(max(y[first_interesting_line])))
     ax.set_ylabel("Time Off")
     ax.xaxis.set_minor_locator(matplotlib.dates.MonthLocator())
     ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4 if full_range else 1))
     ax.legend(loc="upper right")
-    
-    ax = axs[1]
-    x6 = {}
-    y6  ={}
+
+
+def draw_plot_cohesion_line(ax, cohesion_segments, full_range=False):
+    x = {}
+    y = {}
     for k in cohesion_segments:
-        x6[k] = []
-        y6[k] = []
+        x[k] = []
+        y[k] = []
         for s in cohesion_segments[k]:
             if time.mktime(s.start) < time.mktime(cohesion_segments[k][0].start) + ((k + 1) * seconds_per_day):
                 continue
-            x6[k].append(datetime.datetime.fromtimestamp(time.mktime(s.start)))
-            y6[k].append((s.start_value * 100) / (k * seconds_per_day))
+            x[k].append(datetime.datetime.fromtimestamp(time.mktime(s.start)))
+            y[k].append((s.start_value * 100) / (k * seconds_per_day))
         linewidth = 0.2 if k == 1 else 1
-        ax.plot(x6[k], y6[k], linewidth=linewidth, label=intervals[k])
+        ax.plot(x[k], y[k], linewidth=linewidth, label=intervals[k])
     ax.set_title("Cohesion")
-    ax.set_xlim(x6[1][0], x6[1][-1])
-    if full_range or not y6[7]:
+    ax.set_xlim(x[1][0], x[1][-1])
+    first_interesting_line = list(intervals.keys())[1]
+    if full_range or not y[first_interesting_line]:
         ax.set_ylim(0, 100)
     else:
-        ax.set_ylim(min(y6[7]), max(y6[7]))
+        ax.set_ylim(min(y[first_interesting_line]), max(y[first_interesting_line]))
     ax.xaxis.set_minor_locator(matplotlib.dates.MonthLocator())
     ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(10))
     ax.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter())
     ax.legend(loc="upper right")
-
-    return fig
 
 
 def segment_length_hours(segments):
