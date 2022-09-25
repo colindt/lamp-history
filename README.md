@@ -54,15 +54,38 @@ those times):
 
 ![weekly trend](example_output/trend_weekly.png)
 
+### Cohesion
+
+Cohesion is a measure of how similar the *on* and *off* patterns are day-to-day,
+or in other words, how consistent your sleep schedule is. The cohesion value for
+a given time is calculated by how often, over the pervious interval, the lamp
+state (*on* or *off*) was the same as it was 24 hours before. 100% cohesion
+means that the lamps switch *on* and *off* at exactly the same time each day,
+and lower values mean lower amounts of overlap over the previous day. Cohesion
+values are calculated in rolling windows of 1, 7, 14, and 30 days and ploted in
+`cohesion_*.png` similar to trend values.
+
+This is an example `cohesion_weekly.png` with 90 days of artificial data:
+
+![weekly cohesion](example_output/cohesion_weekly.png)
+
 ### Plots
 
-[`plots1.png`](example_output/plots1.png) and -`.pdf` shows various plots of other
-information about the data that might be interesting. The top two are histograms
-of the time the lamps are continuously *off* or *on* (a "segment"). The middle
-two show the relationship between the lengths of adjacent segments (*off* then
-*on*, or *on* then *off*). The bottom two show the relationship between a
-segment's length and the total time the lamps were *off* in the 24 hours prior
-to the segment's start.
+`plots1.png`, `plots2.png`, and `plots3.png` (and their PDF versions) show
+various plots of other information about the data that might be interesting
+(though mostly only for real data).
+
+In [`plots1`](example_output/plots1.png), the top two are histograms of the time
+the lamps are continuously *off* or *on* (a "segment"). The bottom two are 2D
+histograms of that data over time.
+
+In [`plots2`](example_output/plots2.png), the top two show the relationship
+between the lengths of adjacent segments (*off* then *on*, or *on* then *off*).
+The bottom two show the relationship between a segment's length and the total
+time the lamps were *off* in the 24 hours prior to the segment's start.
+
+[`plots3`](example_output/plots3.png) shows the "trend" and "cohesion" data as
+line graphs.
 
 
 ## Examples
