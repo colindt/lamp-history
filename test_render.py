@@ -231,6 +231,12 @@ def test_segment_length_hours(segments_on_first):
     assert on_segment_lengths  == [1, 3, 17, 4, 4]
 
 
+def test_make_bins():
+    assert make_bins([13.1], 0.5) == [0, .5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5, 12, 12.5, 13, 13.5]
+    assert make_bins([24.2], 2) == [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26]
+    assert all(acc - exp < 1e-8 for acc,exp in zip(make_bins([2], 0.2), [0, .2, .4, .6, .8, 1, 1.2, 1.4, 1.6, 1.8, 2]))
+
+
 def test_format_hours():
     assert format_hours(2.5)   == " 2:30"
     assert format_hours(2.25)  == " 2:15"

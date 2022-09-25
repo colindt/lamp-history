@@ -328,9 +328,8 @@ def calc_trend_segment_values(trend_segments, inital_value=0):
 # `kwargs` of `draw_chart()` are passed along to both functions
 def draw_chart(segments, draw_function, setup_function=(lambda s,**k:(None,None,None)), lut=None, width=720, day_height=6, **kwargs):
     first_date = time_to_date(segments[0].start)
-    last_date  = time_to_date(segments[-1].end)
 
-    day_count = (last_date - first_date).days + 1
+    day_count = count_days(segments)
 
     im = Image.new("RGB", (width, day_height * day_count), (255,255,255))
     draw = ImageDraw.Draw(im)
@@ -604,71 +603,76 @@ def format_hours(t):
 
 def draw_plots(off_segments, on_segments, trend_segments, cohesion_segments):
     print("drawing plots...")
-    fig1 = draw_plots_page1(off_segments, on_segments, trend_segments)
-    fig2 = draw_plots_page2(trend_segments, cohesion_segments)
-    return (fig1, fig2)
-
-
-def draw_plots_page1(off_segments, on_segments, trend_segments):
-    advanced_plots = True
-
-    w = 8.5
-    h = 11
-
-    if advanced_plots:
-        fig, axs = plt.subplots(3, 2, figsize=(w,h), tight_layout=True)
-    else:
-        fig, axs = plt.subplots(2, 1, figsize=(w,h), tight_layout={"rect":(1.25/w, 0.6/h, 7.25/w, 10.5/h), "h_pad":3}, squeeze=False)
 
     off_segment_lengths = segment_length_hours(off_segments)
     on_segment_lengths = segment_length_hours(on_segments)
 
+    fig1 = draw_plots_page1(off_segments, on_segments, off_segment_lengths, on_segment_lengths)
+    fig2 = draw_plots_page2(off_segments, on_segments, off_segment_lengths, on_segment_lengths, trend_segments)
+    fig3 = draw_plots_page3(trend_segments, cohesion_segments)
+    return (fig1, fig2, fig3)
+
+
+def draw_plots_page1(off_segments, on_segments, off_segment_lengths, on_segment_lengths):
+    w = 8.5
+    h = 11
+    fig, axs = plt.subplots(2, 2, figsize=(w,h), height_ratios=(1,3), tight_layout=True)
+
     draw_plot_off_histogram(axs[0,0], off_segment_lengths)
-    draw_plot_on_histogram(axs[0,1] if advanced_plots else axs[1,0], on_segment_lengths)
+    draw_plot_on_histogram(axs[0,1], on_segment_lengths)
 
-    if advanced_plots:
-        n = min(len(off_segments), len(on_segments))
+    draw_plot_segment_length_timehist(axs[1,0], off_segments, off_segment_lengths, 0.5, 1)
+    draw_plot_segment_length_timehist(axs[1,1], on_segments, on_segment_lengths, 2, 4)
 
-        if off_segments[0].end == on_segments[0].start: # starts with off segment
-            print("off segment first")
-            x1 = off_segment_lengths[:n]
-            y1 = on_segment_lengths[:n]
-            c1 = [time.mktime(i.start) for i in on_segments[:n]]
-
-            x2 = on_segment_lengths[:n-1]
-            y2 = off_segment_lengths[1:n]
-            c2 = [time.mktime(i.start) for i in off_segments[1:n]]
-        elif on_segments[0].end == off_segments[0].start: # starts with on segment
-            print("WARNING: on segment first (UNTESTED)")
-            x1 = off_segment_lengths[:n-1]
-            y1 = on_segment_lengths[1:n]
-            c1 = [time.mktime(i.start) for i in on_segments[1:n]]
-
-            x2 = on_segment_lengths[:n]
-            y2 = off_segment_lengths[:n]
-            c2 = [time.mktime(i.start) for i in off_segments[:n]]
-        else:
-            print("ERROR: first segments don't line up")
-
-        scattersize = 8
-
-        draw_plot_off_vs_next_on_scatter(axs[1,0], x1, y1, scattersize, c1, axs[0,0].get_xlim())
-        draw_plot_on_vs_next_off_scatter(axs[1,1], x2, y2, scattersize, c2, axs[0,1].get_xlim())
-
-        trend_values = {}
-        for s in trend_segments[1]:
-            trend_values[time.mktime(s.start)] = s.start_value
-
-        draw_plot_day_vs_off_scatter(axs[2,0], trend_values, off_segments, off_segment_lengths, scattersize)
-        draw_plot_day_vs_on_scatter(axs[2,1], trend_values, on_segments, on_segment_lengths, scattersize)
-    
     return fig
 
 
-def draw_plots_page2(trend_segments, cohesion_segments):
+def draw_plots_page2(off_segments, on_segments, off_segment_lengths, on_segment_lengths, trend_segments):
+    w = 8.5
+    h = 8.5
+    fig, axs = plt.subplots(2, 2, figsize=(w,h), tight_layout=True)
+
+    n = min(len(off_segments), len(on_segments))
+
+    if off_segments[0].end == on_segments[0].start: # starts with off segment
+        print("off segment first")
+        x1 = off_segment_lengths[:n]
+        y1 = on_segment_lengths[:n]
+        c1 = [time.mktime(i.start) for i in on_segments[:n]]
+
+        x2 = on_segment_lengths[:n-1]
+        y2 = off_segment_lengths[1:n]
+        c2 = [time.mktime(i.start) for i in off_segments[1:n]]
+    elif on_segments[0].end == off_segments[0].start: # starts with on segment
+        print("WARNING: on segment first (UNTESTED)")
+        x1 = off_segment_lengths[:n-1]
+        y1 = on_segment_lengths[1:n]
+        c1 = [time.mktime(i.start) for i in on_segments[1:n]]
+
+        x2 = on_segment_lengths[:n]
+        y2 = off_segment_lengths[:n]
+        c2 = [time.mktime(i.start) for i in off_segments[:n]]
+    else:
+        print("ERROR: first segments don't line up")
+
+    scattersize = 8
+
+    draw_plot_off_vs_next_on_scatter(axs[0,0], x1, y1, scattersize, c1, axs[0,0].get_xlim())
+    draw_plot_on_vs_next_off_scatter(axs[0,1], x2, y2, scattersize, c2, axs[0,1].get_xlim())
+
+    trend_values = {}
+    for s in trend_segments[1]:
+        trend_values[time.mktime(s.start)] = s.start_value
+
+    draw_plot_day_vs_off_scatter(axs[1,0], trend_values, off_segments, off_segment_lengths, scattersize)
+    draw_plot_day_vs_on_scatter(axs[1,1], trend_values, on_segments, on_segment_lengths, scattersize)
+
+    return fig
+
+
+def draw_plots_page3(trend_segments, cohesion_segments):
     w = 11
     h = 8.5
-
     fig, axs = plt.subplots(2, 1, figsize=(w,h), tight_layout=True)
 
     full_range = False
@@ -680,19 +684,51 @@ def draw_plots_page2(trend_segments, cohesion_segments):
 
 
 def draw_plot_off_histogram(ax, off_segment_lengths):
-    bins = [i/2 for i in range(0, math.ceil(max(off_segment_lengths) * 2) + 1)] # bins in 30 minute intervals
+    bins = make_bins(off_segment_lengths, 0.5)
     ax.hist(off_segment_lengths, weights=off_segment_lengths, bins=bins, density=True)
     ax.set_title("Weighted Off Segments")
+    ax.set_xlim(0, bins[-1])
     ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
+    ax.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(0.5))
     ax.set_xlabel("hours")
 
 
 def draw_plot_on_histogram(ax, on_segment_lengths):
-    bins = range(0, math.ceil(max(on_segment_lengths)) + 1, 2) # bins in 2 hour intervals
+    bins = make_bins(on_segment_lengths, 2)
     ax.hist(on_segment_lengths, weights=on_segment_lengths, bins=bins, density=True)
     ax.set_title("Weighted On Segments")
+    ax.set_xlim(0, bins[-1])
     ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
+    ax.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(2))
     ax.set_xlabel("hours")
+
+
+def draw_plot_segment_length_timehist(ax, segments, segment_lengths, hours_per_bin, xtick):
+    last_date  = time_to_date(segments[-1].end)
+    day_count = count_days(segments)
+    epoch_ordinal = datetime.datetime.fromtimestamp(0).toordinal()
+
+    hist_dates = []
+    hist_segment_lengths = []
+    for i,s in enumerate(segments):
+        for offset in range(30):
+            d = time_to_date(s.end) + datetime.timedelta(days=offset)
+            if d > last_date:
+                break
+            hist_dates.append(d.toordinal() - epoch_ordinal)
+            hist_segment_lengths.append(segment_lengths[i])
+    
+    bins = make_bins(segment_lengths, hours_per_bin)
+    hist, xedges, yedges = np.histogram2d(hist_segment_lengths, hist_dates, bins=(bins, day_count), weights=hist_segment_lengths)
+    ax.pcolormesh(xedges, yedges, hist.T, rasterized=True)
+    ax.set_xlim(0, bins[-1])
+    ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(xtick))
+    ax.xaxis.set_minor_locator(matplotlib.ticker.MultipleLocator(hours_per_bin))
+    yloc = matplotlib.dates.AutoDateLocator()
+    ax.yaxis.set_major_locator(yloc)
+    ax.yaxis.set_minor_locator(matplotlib.dates.MonthLocator())
+    ax.yaxis.set_major_formatter(matplotlib.dates.AutoDateFormatter(yloc))
+    ax.invert_yaxis()
 
 
 def draw_plot_off_vs_next_on_scatter(ax, x, y, s, c, xlim):
@@ -702,7 +738,6 @@ def draw_plot_off_vs_next_on_scatter(ax, x, y, s, c, xlim):
     ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
     ax.set_xlabel("Off Segment Length")
     ax.set_ylabel("Next On Segment Length")
-    ax.set_xlim(xlim)
 
 
 def draw_plot_on_vs_next_off_scatter(ax, x, y, s, c, xlim):
@@ -712,7 +747,6 @@ def draw_plot_on_vs_next_off_scatter(ax, x, y, s, c, xlim):
     ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
     ax.set_xlabel("On Segment Length")
     ax.set_ylabel("Next Off Segment Length")
-    ax.set_xlim(xlim)
 
 
 def draw_plot_day_vs_off_scatter(ax, trend_values, off_segments, off_segment_lengths, s):
@@ -801,8 +835,18 @@ def segment_length_hours(segments):
     return segment_lengths
 
 
+def make_bins(segment_lengths, hours_per_bin):
+    return [(i * hours_per_bin) for i in range(0, math.ceil(max(segment_lengths) / hours_per_bin) + 1)]
+
+
 def time_to_date(t):
     return datetime.date.fromtimestamp(time.mktime(t))
+
+
+def count_days(segments):
+    first_date = time_to_date(segments[0].start)
+    last_date  = time_to_date(segments[-1].end)
+    return (last_date - first_date).days + 1
 
 
 def start_of_day(t):
