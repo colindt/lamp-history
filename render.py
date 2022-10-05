@@ -608,7 +608,7 @@ def draw_plots(off_segments, on_segments, trend_segments, cohesion_segments):
     on_segment_lengths = segment_length_hours(on_segments)
 
     fig1 = draw_plots_page1(off_segments, on_segments, off_segment_lengths, on_segment_lengths)
-    fig2 = draw_plots_page2(off_segments, on_segments, off_segment_lengths, on_segment_lengths, trend_segments)
+    fig2 = draw_plots_page2(off_segments, on_segments, off_segment_lengths, on_segment_lengths, trend_segments, cohesion_segments)
     fig3 = draw_plots_page3(trend_segments, cohesion_segments)
     return (fig1, fig2, fig3)
 
@@ -627,10 +627,10 @@ def draw_plots_page1(off_segments, on_segments, off_segment_lengths, on_segment_
     return fig
 
 
-def draw_plots_page2(off_segments, on_segments, off_segment_lengths, on_segment_lengths, trend_segments):
+def draw_plots_page2(off_segments, on_segments, off_segment_lengths, on_segment_lengths, trend_segments, cohesion_segments):
     w = 8.5
-    h = 8.5
-    fig, axs = plt.subplots(2, 2, figsize=(w,h), tight_layout=True)
+    h = 11
+    fig, axs = plt.subplots(3, 2, figsize=(w,h), tight_layout=True)
 
     n = min(len(off_segments), len(on_segments))
 
@@ -657,8 +657,8 @@ def draw_plots_page2(off_segments, on_segments, off_segment_lengths, on_segment_
 
     scattersize = 8
 
-    draw_plot_off_vs_next_on_scatter(axs[0,0], x1, y1, scattersize, c1, axs[0,0].get_xlim())
-    draw_plot_on_vs_next_off_scatter(axs[0,1], x2, y2, scattersize, c2, axs[0,1].get_xlim())
+    draw_plot_off_vs_next_on_scatter(axs[0,0], x1, y1, scattersize, c1)
+    draw_plot_on_vs_next_off_scatter(axs[0,1], x2, y2, scattersize, c2)
 
     trend_values = {}
     for s in trend_segments[1]:
@@ -666,6 +666,8 @@ def draw_plots_page2(off_segments, on_segments, off_segment_lengths, on_segment_
 
     draw_plot_day_vs_off_scatter(axs[1,0], trend_values, off_segments, off_segment_lengths, scattersize)
     draw_plot_day_vs_on_scatter(axs[1,1], trend_values, on_segments, on_segment_lengths, scattersize)
+
+    draw_plot_trend_vs_cohesion_scatter(axs[2,0], trend_segments, cohesion_segments, scattersize, list(intervals.keys())[-1])
 
     return fig
 
@@ -731,7 +733,7 @@ def draw_plot_segment_length_timehist(ax, segments, segment_lengths, hours_per_b
     ax.invert_yaxis()
 
 
-def draw_plot_off_vs_next_on_scatter(ax, x, y, s, c, xlim):
+def draw_plot_off_vs_next_on_scatter(ax, x, y, s, c):
     ax.scatter(x, y, s=s, c=c)
     ax.set_title("Off vs Next On Segment")
     ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(1))
@@ -740,7 +742,7 @@ def draw_plot_off_vs_next_on_scatter(ax, x, y, s, c, xlim):
     ax.set_ylabel("Next On Segment Length")
 
 
-def draw_plot_on_vs_next_off_scatter(ax, x, y, s, c, xlim):
+def draw_plot_on_vs_next_off_scatter(ax, x, y, s, c):
     ax.scatter(x, y, s=s, c=c)
     ax.set_title("On vs Next Off Segment")
     ax.xaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
@@ -769,6 +771,30 @@ def draw_plot_day_vs_on_scatter(ax, trend_values, on_segments, on_segment_length
     ax.yaxis.set_major_locator(matplotlib.ticker.MultipleLocator(4))
     ax.set_xlabel("Time Off in the Last Day")
     ax.set_ylabel("Subsequent On Segment Length")
+
+
+def draw_plot_trend_vs_cohesion_scatter(ax, trend_segments, cohesion_segments, scattersize, intertval_days):
+    k = intertval_days
+
+    cohesion_lookup = {}
+    for s in cohesion_segments[k]:
+        cohesion_lookup[s.start] = s
+
+    x = []
+    y = []
+    c = []
+    for s in trend_segments[k]:
+        if time.mktime(s.start) < time.mktime(cohesion_segments[k][0].start) + ((k + 1) * seconds_per_day):
+            continue
+        x.append(s.start_value / (k * 60 * 60))
+        y.append((cohesion_lookup[s.start].start_value * 100) / (k * seconds_per_day))
+        c.append(time.mktime(s.start))
+    
+    ax.scatter(x, y, s=scattersize, c=c)
+    ax.set_title(f"Trend vs Cohesion ({intervals[k]})")
+    ax.set_xlabel("Trend (hours)")
+    ax.set_ylabel("Cohesion")
+    ax.yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(decimals=0))
 
 
 def draw_plot_trend_line(ax, trend_segments, full_range=False):
