@@ -17,12 +17,25 @@ button toggles the relay and records the event to `history.txt`.
 [`render.py`](render.py) produces a series of charts based on the `history.txt`
 output by `lamps.py`.
 
-```sh
-render.py outpit_dir list_of_history_files...
-```
+```txt
+usage: render.py [-h] [-lat LAT] [-lon LON] [-tz TZ] outfolder infiles...
 
-With no arguments, `render.py` looks for `input.txt` and reads a
-newline-separated list of arguments.
+options:
+  -h, --help  show this help message and exit
+
+files:
+  outfolder   directory to output generated charts and plots
+  infiles     history file(s) to read
+
+sunrise and sunset:
+  Specify all three of these arguments to add sunrise and sunset markers to the history chart
+
+  -lat LAT    latitude in degrees north
+  -lon LON    longitude in degrees east
+  -tz TZ      timezone name, e.g., "America/Los_Angeles"
+
+With no files specified, arguments are read from 'input.txt'
+```
 
 ### History
 
@@ -81,8 +94,10 @@ histograms of that data over time.
 
 In [`plots2`](example_output/plots2.png), the top two show the relationship
 between the lengths of adjacent segments (*off* then *on*, or *on* then *off*).
-The bottom two show the relationship between a segment's length and the total
-time the lamps were *off* in the 24 hours prior to the segment's start.
+The middle two show the relationship between a segment's length and the total
+time the lamps were *off* in the 24 hours prior to the segment's start. The
+bottom left shows the relationship between the montly trend and the monthly
+cohesion.
 
 [`plots3`](example_output/plots3.png) shows the "trend" and "cohesion" data as
 line graphs.

@@ -1,3 +1,5 @@
 matplotlib>=3.6
 numpy
 Pillow
+ephem
+tzdata ; platform_system=="Windows"

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 #coding: utf-8
 
+import argparse
+import shlex
 import sys
 import os
 import time
@@ -14,7 +16,8 @@ import matplotlib as mpl
 import matplotlib.cm
 import numpy as np
 
-from pprint import pprint as pp
+import zoneinfo
+import ephem
 
 sys.stdout.reconfigure(line_buffering=True) # auto-flush print()
 
@@ -79,7 +82,7 @@ class TrendSegment (Segment):
 
 
 
-def main(outfolder, infiles):  # pragma: no cover
+def main(outfolder, infiles, sunrise_args=None):  # pragma: no cover
     print(f"input: {infiles}")
     print(f"output: {outfolder}/")
 
@@ -91,7 +94,7 @@ def main(outfolder, infiles):  # pragma: no cover
     split_off_segments = split_segments(off_segments)
     split_on_segments = split_segments(on_segments)
 
-    draw_chart_frame(*draw_segment_chart(split_off_segments)).save(f"{outfolder}/history.png")
+    draw_chart_frame(*draw_segment_chart(split_off_segments), sunrise_args=sunrise_args).save(f"{outfolder}/history.png")
 
     trend_lut = colormap_to_lut(trend_colormap)
     cohesion_lut = colormap_to_lut(cohesion_colormap)
@@ -469,7 +472,7 @@ def draw_gradient(draw, x1, y1, x2, y2, start_value, end_value, lut):
         draw.rectangle((x_a, y1, x_b, y2), fill=prev_color, outline=None, width=0)
 
 
-def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, key_min=None, key_max=None, *, gridcolor=(128,128,128), percentage=False):
+def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, key_min=None, key_max=None, *, gridcolor=(128,128,128), percentage=False, sunrise_args=None):
     print("drawing chart frame...")
 
     first_date = time_to_date(start_time)
@@ -496,6 +499,9 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
             gridcoords.append((x, y))
     
     chart_draw.point(gridcoords, gridcolor)  # slight speedup by drawing all the points at once
+
+    if sunrise_args:
+        draw_sunrise_and_sunset(chart_draw, chart_image.width, day_height, day_count, first_date, sunrise_args)
 
     text_vbox = 18
     text_outer_hpad = 8
@@ -589,6 +595,28 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
         draw.point(gridcoords, gridcolor)
 
     return im
+
+
+def draw_sunrise_and_sunset(draw, width, day_height, day_count, first_date, sunrise_args):
+    tz = zoneinfo.ZoneInfo(sunrise_args.tz)
+    obs = ephem.Observer()
+    obs.lat = str(sunrise_args.lat)
+    obs.lon = str(sunrise_args.lon)
+
+    for i in range(day_count):
+        day = datetime.datetime.combine(first_date + datetime.timedelta(days=i), datetime.time.min, tz)
+
+        obs.date = day
+        sr = ephem.to_timezone(obs.next_rising(ephem.Sun()), tz)
+        ss = ephem.to_timezone(obs.next_setting(ephem.Sun()), tz)
+        changes = ((sr, 1), (ss, 0))
+        
+        for c in changes:
+            seconds_from_midnight = (c[0] - day).total_seconds()
+            x = seconds_from_midnight * width / seconds_per_day
+            y = i * day_height
+
+            draw.line((x, y, x, y+5), (255,192,0) if c[1] else (192,0,255))
 
 
 def format_hours(t):
@@ -890,11 +918,37 @@ def struct_time_to_datetime(t):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 1:
-        # with no arguments, read input.txt for a list of arguments
+    parser = argparse.ArgumentParser(
+        usage="%(prog)s [-h] [-lat LAT] [-lon LON] [-tz TZ] outfolder infiles...",
+        epilog="With no files specified, arguments are read from 'input.txt'"
+    )
+    file_group = parser.add_argument_group("files")
+    file_group.add_argument("outfolder", nargs="?", help="directory to output generated charts and plots")
+    file_group.add_argument("infiles", nargs="*", help="history file(s) to read")
+    sunrise_group = parser.add_argument_group("sunrise and sunset", "Specify all three of these arguments to add sunrise and sunset markers to the history chart")
+    sunrise_group.add_argument("-lat", type=float, help="latitude in degrees north")
+    sunrise_group.add_argument("-lon", type=float, help="longitude in degrees east")
+    sunrise_group.add_argument("-tz", help='timezone name, e.g., "America/Los_Angeles"')
+    args = parser.parse_args()
+    
+    if args.outfolder is None and args.infiles == []:
+        print("No files specified. Reading arguments from `input.txt`")
         with open("input.txt") as f:
-            args = f.read().strip().split('\n')
-        main(args[0], args[1:])
+            args = parser.parse_args(shlex.split(f.read(), posix=False))
+    
+    print(args)
+
+    sunrise_list = (args.lat, args.lon, args.tz)
+    notnones = [x is not None for x in sunrise_list]
+    if all(notnones) != any(notnones):
+        parser.error("Must specify all or none of -lat, -lon, and -tz")
+
+    if all(notnones):
+        sunrise_args = argparse.Namespace()
+        sunrise_args.lat = args.lat
+        sunrise_args.lon = args.lon
+        sunrise_args.tz = args.tz
     else:
-        # first argument output folder, remaining arguments input files in order
-        main(sys.argv[1], sys.argv[2:])
+        sunrise_args = None
+
+    main(args.outfolder, args.infiles, sunrise_args)
