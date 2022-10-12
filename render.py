@@ -6,9 +6,11 @@ import shlex
 import sys
 import os
 import time
-import datetime
+from datetime import datetime, date, timedelta
+import datetime as dt
 import math
 import enum
+from typing import Sequence, Union
 
 from PIL import Image, ImageDraw, ImageFont
 import matplotlib.pyplot as plt
@@ -42,7 +44,7 @@ OnOff = enum.Enum("OnOff", {"on":1, "off":0})
 
 
 class Event:
-    def __init__(self, time, pin, state, delay, line):
+    def __init__(self, time, pin:int, state:OnOff, delay:float, line:str):
         self.time  = time
         self.pin   = pin
         self.state = state
@@ -54,15 +56,16 @@ class Event:
 
 
 class Segment:
-    def __init__(self, start, end):
+    def __init__(self, start, end, type_):
         self.start = start
         self.end   = end
+        self.type  = type_
     
     def __repr__(self):
-        return f"Segment([{time.asctime(self.start)}] -> [{time.asctime(self.end)}])"
+        return f"Segment([{time.asctime(self.start)}] -> [{time.asctime(self.end)}] {self.type})"
     
     def as_tuple(self):
-        return (self.start, self.end)
+        return (self.start, self.end, self.type)
 
 
 class TrendSegment (Segment):
@@ -82,7 +85,7 @@ class TrendSegment (Segment):
 
 
 
-def main(outfolder, infiles, sunrise_args=None):  # pragma: no cover
+def main(outfolder, infiles, segment_filter=None, sunrise_args=None):  # pragma: no cover
     print(f"input: {infiles}")
     print(f"output: {outfolder}/")
 
@@ -90,7 +93,9 @@ def main(outfolder, infiles, sunrise_args=None):  # pragma: no cover
 
     events = load_events_files(infiles)
 
-    off_segments, on_segments = make_segments(events)
+    all_segments = make_segments(events)
+    off_segments, on_segments = separate_on_off_segments(all_segments)
+
     split_off_segments = split_segments(off_segments)
     split_on_segments = split_segments(on_segments)
 
@@ -120,7 +125,7 @@ def main(outfolder, infiles, sunrise_args=None):  # pragma: no cover
         fig.savefig(f"{outfolder}/plots{i+1}.pdf")
 
 
-def load_events_files(infiles):
+def load_events_files(infiles: Sequence[Union[str, bytes, os.PathLike]]) -> list[Event]:
     print("loading events...")
 
     events = []
@@ -146,11 +151,10 @@ def load_events_files(infiles):
     return events
 
 
-def make_segments(events):
+def make_segments(events: Sequence[Event]) -> list[Segment]:
     print("making segments...")
 
-    off_segments = []
-    on_segments = []
+    all_segments = []
     state = events[0].state
     segment_start = events[0]
     for e in events:
@@ -163,7 +167,7 @@ def make_segments(events):
                     print("warning: state transition from on to on:", segment_start, e)
             elif e.state == OnOff.off:
                 if t1:
-                    on_segments.append(Segment(t1, t2))
+                    all_segments.append(Segment(t1, t2, OnOff.on))
 
                 segment_start = e
                 state = OnOff.off
@@ -174,7 +178,7 @@ def make_segments(events):
             t2 = e.time
 
             if e.state == OnOff.on:
-                off_segments.append(Segment(t1, t2))
+                all_segments.append(Segment(t1, t2, OnOff.off))
 
                 segment_start = e
                 state = OnOff.on
@@ -185,10 +189,16 @@ def make_segments(events):
         else:  #pragma: no cover
             raise ValueError("invalid state machine state '{}'".format(state))
 
+    return all_segments
+
+
+def separate_on_off_segments(all_segments: Sequence[Segment]) -> tuple[list[Segment], list[Segment]]:
+    off_segments = [s for s in all_segments if s.type == OnOff.off]
+    on_segments = [s for s in all_segments if s.type == OnOff.on]
     return (off_segments, on_segments)
 
 
-def split_segments(segments):
+def split_segments(segments: Sequence[Segment]) -> list[Segment]:
     # split segments that span day boundaries into two segments that don't
     print("splitting segments...")
 
@@ -209,7 +219,7 @@ def split_segments(segments):
     return new_segments
 
 
-def make_trend_segments(events, interval=seconds_per_day):
+def make_trend_segments(events: Sequence[Event], interval=seconds_per_day):
     print("making trend segments...")
 
     def state_transition_function(head_state, tail_state):
@@ -491,7 +501,7 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
     # week grid
     max_date_textlength = 0
     for i in range(6 - start_time.tm_wday, day_count, 7):
-        d = first_date + datetime.timedelta(i)
+        d = first_date + timedelta(i)
         max_date_textlength = max(max_date_textlength, chart_draw.textlength(str(d), font))
 
         y = i * day_height
@@ -540,7 +550,7 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
 
     # week labels
     for i in range(6 - start_time.tm_wday, day_count, 7):
-        d = first_date + datetime.timedelta(i)
+        d = first_date + timedelta(i)
         draw.text((left_padding - text_inner_hpad, i * day_height + top_padding), str(d), (0,0,0), font, "rt")
 
     # color key
@@ -604,7 +614,7 @@ def draw_sunrise_and_sunset(draw, width, day_height, day_count, first_date, sunr
     obs.lon = str(sunrise_args.lon)
 
     for i in range(day_count):
-        day = datetime.datetime.combine(first_date + datetime.timedelta(days=i), datetime.time.min, tz)
+        day = datetime.combine(first_date + timedelta(days=i), dt.time.min, tz)
 
         obs.date = day
         sr = ephem.to_timezone(obs.next_rising(ephem.Sun()), tz)
@@ -736,13 +746,13 @@ def draw_plot_on_histogram(ax, on_segment_lengths):
 def draw_plot_segment_length_timehist(ax, segments, segment_lengths, hours_per_bin, xtick):
     last_date  = time_to_date(segments[-1].end)
     day_count = count_days(segments)
-    epoch_ordinal = datetime.datetime.fromtimestamp(0).toordinal()
+    epoch_ordinal = datetime.fromtimestamp(0).toordinal()
 
     hist_dates = []
     hist_segment_lengths = []
     for i,s in enumerate(segments):
         for offset in range(30):
-            d = time_to_date(s.end) + datetime.timedelta(days=offset)
+            d = time_to_date(s.end) + timedelta(days=offset)
             if d > last_date:
                 break
             hist_dates.append(d.toordinal() - epoch_ordinal)
@@ -834,7 +844,7 @@ def draw_plot_trend_line(ax, trend_segments, full_range=False):
         for s in trend_segments[k]:
             if time.mktime(s.start) < time.mktime(trend_segments[k][0].start) + (k * seconds_per_day):
                 continue
-            x[k].append(datetime.datetime.fromtimestamp(time.mktime(s.start)))
+            x[k].append(datetime.fromtimestamp(time.mktime(s.start)))
             y[k].append(s.start_value / (k * 60 * 60))
         linewidth = 0.1 if k == 1 else 1
         ax.plot(x[k], y[k], linewidth=linewidth, label=intervals[k])
@@ -860,7 +870,7 @@ def draw_plot_cohesion_line(ax, cohesion_segments, full_range=False):
         for s in cohesion_segments[k]:
             if time.mktime(s.start) < time.mktime(cohesion_segments[k][0].start) + ((k + 1) * seconds_per_day):
                 continue
-            x[k].append(datetime.datetime.fromtimestamp(time.mktime(s.start)))
+            x[k].append(datetime.fromtimestamp(time.mktime(s.start)))
             y[k].append((s.start_value * 100) / (k * seconds_per_day))
         linewidth = 0.2 if k == 1 else 1
         ax.plot(x[k], y[k], linewidth=linewidth, label=intervals[k])
@@ -894,7 +904,7 @@ def make_bins(segment_lengths, hours_per_bin):
 
 
 def time_to_date(t):
-    return datetime.date.fromtimestamp(time.mktime(t))
+    return date.fromtimestamp(time.mktime(t))
 
 
 def count_days(segments):
@@ -914,14 +924,15 @@ def end_of_day(t):
 
 
 def struct_time_to_datetime(t):
-    return datetime.datetime.fromtimestamp(time.mktime(t))
+    return datetime.fromtimestamp(time.mktime(t))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        usage="%(prog)s [-h] [-lat LAT] [-lon LON] [-tz TZ] outfolder infiles...",
+        usage="%(prog)s [-h] [-f MIN] [-lat LAT] [-lon LON] [-tz TZ] outfolder infiles...",
         epilog="With no files specified, arguments are read from 'input.txt'"
     )
+    parser.add_argument("-f", "--filter", metavar="MIN", type=float, help="ignore segments shorter than MIN minutes long")
     file_group = parser.add_argument_group("files")
     file_group.add_argument("outfolder", nargs="?", help="directory to output generated charts and plots")
     file_group.add_argument("infiles", nargs="*", help="history file(s) to read")
@@ -951,4 +962,4 @@ if __name__ == "__main__":
     else:
         sunrise_args = None
 
-    main(args.outfolder, args.infiles, sunrise_args)
+    main(args.outfolder, args.infiles, args.filter, sunrise_args)

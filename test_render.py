@@ -19,12 +19,12 @@ def events_on_first():
 
 @pytest.fixture
 def segments_off_first(events_off_first):
-    return make_segments(events_off_first)
+    return separate_on_off_segments(make_segments(events_off_first))
 
 
 @pytest.fixture
 def segments_on_first(events_on_first):
-    return make_segments(events_on_first)
+    return separate_on_off_segments(make_segments(events_on_first))
 
 
 @pytest.fixture
@@ -218,9 +218,23 @@ def test_draw_cohesion_chart_and_frame(cohesion_segments_with_values, cohesion_l
     assert filecmp.cmp(fname, "test_data/correct_output/cohesion_daily.png", False)
 
 
-@pytest.mark.skip
-def test_draw_plots():
-    pass
+def test_draw_plots(segments_on_first, events_on_first, tmp_path):
+    off_segments, on_segments = segments_on_first
+    
+    trend_segments = {}
+    cohesion_segments = {}
+    for days,name in intervals.items():
+        interval = days * seconds_per_day
+        trend_segments[days] = calc_trend_segment_values(split_segments(make_trend_segments(events_on_first, interval)))
+        cohesion_segments[days] = calc_trend_segment_values(split_segments(make_cohesion_segments(trend_segments[1], interval)), interval)
+
+    figs = draw_plots(off_segments, on_segments, trend_segments, cohesion_segments)
+    
+    for i,fig in enumerate(figs):
+        fname = tmp_path / f"plots{i+1}.png"
+        fig.savefig(fname)
+        
+        assert filecmp.cmp(fname, f"test_data/correct_output/plots{i+1}.png", False)
 
 
 def test_segment_length_hours(segments_on_first):
