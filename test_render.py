@@ -53,56 +53,56 @@ def cohesion_lut():
 def test_load_events_files(events_off_first, events_on_first):
     assert len(events_on_first) == 11
     assert events_on_first[0].state == OnOff.on
-    assert events_on_first[0].time.tm_hour == 0
+    assert events_on_first[0].time.hour == 0
     assert events_on_first[1].state == OnOff.off
-    assert events_on_first[1].time.tm_hour == 1
+    assert events_on_first[1].time.hour == 1
     assert events_on_first[2].state == OnOff.on
-    assert events_on_first[2].time.tm_hour == 3
+    assert events_on_first[2].time.hour == 3
     assert events_on_first[10].state == OnOff.on
-    assert events_on_first[10].time.tm_hour == 10
+    assert events_on_first[10].time.hour == 10
 
     assert len(events_off_first) == 10
     assert events_off_first[0].state == OnOff.off
-    assert events_off_first[0].time.tm_hour == 1
+    assert events_off_first[0].time.hour == 1
     assert events_off_first[1].state == OnOff.on
-    assert events_off_first[1].time.tm_hour == 3
+    assert events_off_first[1].time.hour == 3
     assert events_off_first[9].state == OnOff.on
-    assert events_off_first[9].time.tm_hour == 10
+    assert events_off_first[9].time.hour == 10
 
 
 def test_make_segments_off_first(segments_off_first):
     off_segments, on_segments = segments_off_first
     
     assert len(off_segments) == 5
-    assert off_segments[0].start.tm_hour == 1
-    assert off_segments[1].start.tm_hour == 6
-    assert off_segments[2].start.tm_hour == 2
-    assert off_segments[3].start.tm_hour == 9
-    assert off_segments[4].start.tm_hour == 7
+    assert off_segments[0].start.hour == 1
+    assert off_segments[1].start.hour == 6
+    assert off_segments[2].start.hour == 2
+    assert off_segments[3].start.hour == 9
+    assert off_segments[4].start.hour == 7
 
     assert len(on_segments) == 4
-    assert on_segments[0].start.tm_hour == 3
-    assert on_segments[1].start.tm_hour == 9
-    assert on_segments[2].start.tm_hour == 5
-    assert on_segments[3].start.tm_hour == 3
+    assert on_segments[0].start.hour == 3
+    assert on_segments[1].start.hour == 9
+    assert on_segments[2].start.hour == 5
+    assert on_segments[3].start.hour == 3
 
 
 def test_make_segments_on_first(segments_on_first):
     off_segments, on_segments = segments_on_first
     
     assert len(off_segments) == 5
-    assert off_segments[0].start.tm_hour == 1
-    assert off_segments[1].start.tm_hour == 6
-    assert off_segments[2].start.tm_hour == 2
-    assert off_segments[3].start.tm_hour == 9
-    assert off_segments[4].start.tm_hour == 7
+    assert off_segments[0].start.hour == 1
+    assert off_segments[1].start.hour == 6
+    assert off_segments[2].start.hour == 2
+    assert off_segments[3].start.hour == 9
+    assert off_segments[4].start.hour == 7
 
     assert len(on_segments) == 5
-    assert on_segments[0].start.tm_hour == 0
-    assert on_segments[1].start.tm_hour == 3
-    assert on_segments[2].start.tm_hour == 9
-    assert on_segments[3].start.tm_hour == 5
-    assert on_segments[4].start.tm_hour == 3
+    assert on_segments[0].start.hour == 0
+    assert on_segments[1].start.hour == 3
+    assert on_segments[2].start.hour == 9
+    assert on_segments[3].start.hour == 5
+    assert on_segments[4].start.hour == 3
     
 
 def test_split_segments(segments_on_first):
@@ -110,33 +110,33 @@ def test_split_segments(segments_on_first):
 
     split_off_segments = split_segments(off_segments)
     assert len(split_off_segments) == 6
-    assert split_off_segments[0].end.tm_hour == 3
-    assert split_off_segments[3].end.tm_hour == 23
-    assert split_off_segments[4].start.tm_hour == 0
-    assert split_off_segments[4].start.tm_min == 0
-    assert split_off_segments[4].start.tm_sec == 0
-    assert split_off_segments[4].end.tm_hour == 3
+    assert split_off_segments[0].end.hour == 3
+    assert split_off_segments[3].end.hour == 23
+    assert split_off_segments[4].start.hour == 0
+    assert split_off_segments[4].start.minute == 0
+    assert split_off_segments[4].start.second == 0
+    assert split_off_segments[4].end.hour == 3
 
     split_on_segments  = split_segments(on_segments)
     assert len(split_on_segments) == 6
-    assert split_on_segments[0].end.tm_hour == 1
-    assert split_on_segments[2].end.tm_hour == 23
-    assert split_on_segments[3].start.tm_hour == 0
-    assert split_on_segments[3].start.tm_min == 0
-    assert split_on_segments[3].start.tm_sec == 0
+    assert split_on_segments[0].end.hour == 1
+    assert split_on_segments[2].end.hour == 23
+    assert split_on_segments[3].start.hour == 0
+    assert split_on_segments[3].start.minute == 0
+    assert split_on_segments[3].start.second == 0
 
 
 def test_make_trend_segments(events_off_first, events_on_first):
     trend_segments = make_trend_segments(events_off_first, seconds_per_day)
     assert len(trend_segments) == 15  # two less because the tail doesn't hit the 'Mar 21 00:00:00' breakpoint to divide the 9 to 1 segment 
-    assert [s.end.tm_hour for s in trend_segments] == [     3,  6,  9,      1,  2,  3,  5,  6,  9,  2,  3,  5,  7,  9, 10]
-    assert [s.end.tm_mday for s in trend_segments] == [    21, 21, 21,     22, 22, 22, 22, 22, 22, 23, 23, 23, 23, 23, 23]
+    assert [s.end.hour for s in trend_segments] == [     3,  6,  9,      1,  2,  3,  5,  6,  9,  2,  3,  5,  7,  9, 10]
+    assert [s.end.day for s in trend_segments] == [    21, 21, 21,     22, 22, 22, 22, 22, 22, 23, 23, 23, 23, 23, 23]
     assert [s.trend for s in trend_segments]       == [     1,  0,  1,      0, -1,  0,  1,  0, -1,  1,  0, -1,  0,  1,  0]
 
     trend_segments = make_trend_segments(events_on_first, seconds_per_day)
     assert len(trend_segments) == 17
-    assert [s.end.tm_hour for s in trend_segments] == [ 1,  3,  6,  9,  0,  1,  2,  3,  5,  6,  9,  2,  3,  5,  7,  9, 10]
-    assert [s.end.tm_mday for s in trend_segments] == [21, 21, 21, 21, 22, 22, 22, 22, 22, 22, 22, 23, 23, 23, 23, 23, 23]
+    assert [s.end.hour for s in trend_segments] == [ 1,  3,  6,  9,  0,  1,  2,  3,  5,  6,  9,  2,  3,  5,  7,  9, 10]
+    assert [s.end.day for s in trend_segments] == [21, 21, 21, 21, 22, 22, 22, 22, 22, 22, 22, 23, 23, 23, 23, 23, 23]
     assert [s.trend for s in trend_segments]       == [ 0,  1,  0,  1,  0,  0, -1,  0,  1,  0, -1,  1,  0, -1,  0,  1,  0]
 
 
@@ -149,8 +149,8 @@ def test_make_cohesion_segments(events_on_first):
     trend_segments = make_trend_segments(events_on_first, seconds_per_day)
     cohesion_segments = make_cohesion_segments(trend_segments, seconds_per_day)
     assert len(cohesion_segments) == 20
-    assert [s.end.tm_hour for s in cohesion_segments] == [ 1,  3,  6,  9,  0,  1,  2,  3,  5,  6,  9,  0,  1,  2,  3,  5,  6,  7,  9, 10]
-    assert [s.end.tm_mday for s in cohesion_segments] == [21, 21, 21, 21, 22, 22, 22, 22, 22, 22, 22, 23, 23, 23, 23, 23, 23, 23, 23, 23]
+    assert [s.end.hour for s in cohesion_segments] == [ 1,  3,  6,  9,  0,  1,  2,  3,  5,  6,  9,  0,  1,  2,  3,  5,  6,  7,  9, 10]
+    assert [s.end.day for s in cohesion_segments] == [21, 21, 21, 21, 22, 22, 22, 22, 22, 22, 22, 23, 23, 23, 23, 23, 23, 23, 23, 23]
     assert [s.trend for s in cohesion_segments]       == [ 0, -1,  0, -1,  0,  0,  0,  1, -1,  0,  0, -1, -1,  0,  0,  0,  0,  1,  0,  1]
 
 
@@ -174,7 +174,7 @@ def test_draw_segment_chart_and_frame(segments_on_first, tmp_path):
     assert day_height == 6
     assert day_count == 3
     assert start_time == off_segments[0].start
-    assert lut is None
+    assert lut == []
     assert key_min is None
     assert key_max is None
 
@@ -268,19 +268,19 @@ def test_start_of_day():
     times = (
         ("Mon Jun 26 22:31:40 1950", "Mon Jun 26 00:00:00 1950"),
         ("Tue Jun 27 03:15:51 1950", "Tue Jun 27 00:00:00 1950"),
-        ("Fri Jun 29 00:00:00 1950", "Fri Jun 29 00:00:00 1950"),
-        ("Sat Jun 30 23:59:59 1950", "Sat Jun 30 00:00:00 1950"),
+        ("Thu Jun 29 00:00:00 1950", "Thu Jun 29 00:00:00 1950"),
+        ("Fri Jun 30 23:59:59 1950", "Fri Jun 30 00:00:00 1950"),
     )
     for t in times:
-        assert time.asctime(start_of_day(time.strptime(t[0]))) == t[1]
+        assert start_of_day(datetime.strptime(t[0], TIME_FORMAT)).strftime(TIME_FORMAT) == t[1]
 
 
 def test_end_of_day():
     times = (
-        ("Mon Jun 26 22:31:40 1950", "Mon Jun 26 23:59:60 1950"),
-        ("Tue Jun 27 03:15:51 1950", "Tue Jun 27 23:59:60 1950"),
-        ("Fri Jun 29 00:00:00 1950", "Fri Jun 29 23:59:60 1950"),
-        ("Sat Jun 30 23:59:59 1950", "Sat Jun 30 23:59:60 1950"),
+        ("Mon Jun 26 22:31:40 1950", "1950-06-26 23:59:59.999999"),
+        ("Tue Jun 27 03:15:51 1950", "1950-06-27 23:59:59.999999"),
+        ("Thu Jun 29 00:00:00 1950", "1950-06-29 23:59:59.999999"),
+        ("Fri Jun 30 23:59:59 1950", "1950-06-30 23:59:59.999999"),
     )
     for t in times:
-        assert time.asctime(end_of_day(time.strptime(t[0]))) == t[1]
+        assert str(end_of_day(datetime.strptime(t[0], TIME_FORMAT))) == t[1]
