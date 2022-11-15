@@ -19,10 +19,10 @@ import numpy as np
 import zoneinfo
 import ephem  # type: ignore
 
-from typing import Any, Callable, Mapping, Optional, Protocol, Sequence, TypeVar
+from typing import Any, Callable, Mapping, Sequence, TypeVar
 T = TypeVar("T")
 Lut = list[tuple[int, ...]]
-ChartParams = tuple[ImageDraw.ImageDraw, int, int, datetime, Lut|None, float|None, float|None]
+ChartParams = tuple[Image.Image, int, int, datetime, Lut|None, float|None, float|None]
 Coords = tuple[float, float, float, float]
 
 # auto-flush print()
@@ -95,7 +95,7 @@ class TrendSegment (Segment):
 
 
 
-def main(outfolder, infiles, segment_filter=None, sunrise_args=None):  # pragma: no cover
+def main(outfolder, infiles, segment_filter_minutes=None, sunrise_args=None):  # pragma: no cover
     print(f"input: {infiles}")
     print(f"output: {outfolder}/")
 
@@ -103,7 +103,7 @@ def main(outfolder, infiles, segment_filter=None, sunrise_args=None):  # pragma:
 
     events = load_events_files(infiles)
 
-    all_segments = make_segments(events)
+    all_segments = make_segments(events, segment_filter_minutes=segment_filter_minutes)
     off_segments, on_segments = separate_on_off_segments(all_segments)
 
     split_off_segments = split_segments(off_segments)
@@ -117,18 +117,16 @@ def main(outfolder, infiles, segment_filter=None, sunrise_args=None):  # pragma:
     trend_segments = {}
     cohesion_segments = {}
     for days,name in intervals.items():
+        print(name)
         interval = days * seconds_per_day
 
-        print()
-        print(name)
         trend_segments[days] = calc_trend_segment_values(split_segments(make_trend_segments(events, interval)))
         draw_chart_frame(*draw_trend_chart(trend_segments[days], interval, trend_lut), gridcolor=grid_line_color).save(f"{outfolder}/trend_{name}.png")
 
-        print()
         cohesion_segments[days] = calc_trend_segment_values(split_segments(make_cohesion_segments(trend_segments[1], interval)), interval)
         draw_chart_frame(*draw_trend_chart(cohesion_segments[days], interval, cohesion_lut, normalized=True, extra_ignore_interval=seconds_per_day), gridcolor=grid_line_color, percentage=True).save(f"{outfolder}/cohesion_{name}.png")
 
-    print()
+    print("drawing plots")
     figs = draw_plots(off_segments, on_segments, trend_segments, cohesion_segments)
     for i,fig in enumerate(figs):
         fig.savefig(f"{outfolder}/plots{i+1}.png")
@@ -136,8 +134,6 @@ def main(outfolder, infiles, segment_filter=None, sunrise_args=None):  # pragma:
 
 
 def load_events_files(infiles:Sequence[str|bytes|os.PathLike]) -> list[Event]:
-    print("loading events...")
-
     events = []
 
     for fname in infiles:
@@ -161,9 +157,7 @@ def load_events_files(infiles:Sequence[str|bytes|os.PathLike]) -> list[Event]:
     return events
 
 
-def make_segments(events:Sequence[Event]) -> list[Segment]:
-    print("making segments...")
-
+def make_segments(events:Sequence[Event], segment_filter_minutes:float=0) -> Sequence[Segment]:
     all_segments = []
     state = events[0].state
     segment_start = events[0]
@@ -182,7 +176,7 @@ def make_segments(events:Sequence[Event]) -> list[Segment]:
                 segment_start = e
                 state = OnOff.off
             else:  #pragma: no cover
-                raise ValueError("invalid event state '{}'".format(e.state))
+                raise ValueError(f"invalid event state '{e.state}'")
         elif state == OnOff.off:
             t1 = segment_start.time
             t2 = e.time
@@ -193,24 +187,56 @@ def make_segments(events:Sequence[Event]) -> list[Segment]:
                 segment_start = e
                 state = OnOff.on
             elif e.state == OnOff.off:  #pragma: no cover
-                print("warning: state transition from off to off", segment_start, e)
+                print("warning: state transition from off to off:", segment_start, e)
             else:  #pragma: no cover
-                raise ValueError("invalid event state '{}'".format(e.state))
+                raise ValueError(f"invalid event state '{e.state}'")
         else:  #pragma: no cover
-            raise ValueError("invalid state machine state '{}'".format(state))
+            raise ValueError(f"invalid state machine state '{state}'")
 
-    return all_segments
+    return filter_segments(all_segments, segment_filter_minutes)
+
+
+def filter_segments(all_segments:Sequence[Segment], segment_filter_minutes:float) -> Sequence[Segment]:
+    """remove segments shorter than `segment_filter_minutes` minutes by lumping
+    them onto the end of the segment before them, and group together the
+    resulting same-type segments that end up next to each other"""
+
+    if segment_filter_minutes == 0:
+        return all_segments
+
+    new_segments = []
+    i = 0
+    while i < len(all_segments):
+        start = all_segments[i].start
+        end   = all_segments[i].end
+        type_ = all_segments[i].type
+
+        for j in range(i+1, len(all_segments)):  # loop through segments after the current segment
+            if all_segments[j].total_seconds() < (segment_filter_minutes * 60) or all_segments[j].type == type_:  # lump short segments into the current segment and merge adjacent segments of the same type
+                i = j  # skip ahead
+                end = all_segments[j].end
+            else:  # stop lumping segments when you find a long one
+                break
+        
+        new_segments.append(Segment(start, end, type_))
+        i += 1
+    
+    print(f"filtered {len(all_segments)} segments down to {len(new_segments)}")
+
+    return new_segments
 
 
 def separate_on_off_segments(all_segments:Sequence[Segment]) -> tuple[list[Segment],list[Segment]]:
+    """separate a list of mixed-type segments into two lists, the first with
+    just the Off segments, and the second with just the On segments"""
+
     off_segments = [s for s in all_segments if s.type == OnOff.off]
     on_segments = [s for s in all_segments if s.type == OnOff.on]
     return (off_segments, on_segments)
 
 
 def split_segments(segments:Sequence[Segment]) -> list[Segment]:
-    # split segments that span day boundaries into two segments that don't
-    print("splitting segments...")
+    """split segments that span day boundaries into two segments that don't"""
 
     new_segments = []
 
@@ -230,7 +256,8 @@ def split_segments(segments:Sequence[Segment]) -> list[Segment]:
 
 
 def make_trend_segments(events:Sequence[Event], interval=seconds_per_day) -> list[TrendSegment]:
-    print("making trend segments...")
+    """Trend segments are periods where the average time Off in the last interval is either rising, falling, or steady.
+    This does not fill in the start and end values of the average. Use `calc_trend_segment_values` for that."""
 
     def state_transition_function(head_state, tail_state):
         if head_state == OnOff.on and tail_state == OnOff.off:
@@ -244,7 +271,8 @@ def make_trend_segments(events:Sequence[Event], interval=seconds_per_day) -> lis
 
 
 def make_cohesion_segments(trend_segments:list[TrendSegment], interval=seconds_per_day) -> list[TrendSegment]:
-    print("making cohesion segments...")
+    """Cohesion segments are periods where the cohesion in the last interval is either rising, falling, or steady.
+    This does not fill in the start and end values of the cohesion. Use `calc_trend_segment_values` for that."""
     
     def state_transition_function(head_state, tail_state):
         if head_state == Trend.steady and tail_state != Trend.steady:
@@ -262,7 +290,8 @@ def make_cohesion_segments(trend_segments:list[TrendSegment], interval=seconds_p
 
 
 def window_walk(events:Sequence, time_attr:str, state_attr:str, intial_tail_state, state_transition_function:Callable[[T,T],Trend], interval=seconds_per_day) -> list[TrendSegment]:
-    # two markers, `head` and `tail` walk along the timeline `interval` seconds apart. 
+    """Common algorithm shared between `make_trend_segments` and `make_cohesion_segments`.
+    Two markers, `head` and `tail` walk along the timeline `interval` seconds apart. """
 
     window_segments = []
     
@@ -325,7 +354,7 @@ def window_walk(events:Sequence, time_attr:str, state_attr:str, intial_tail_stat
 
 
 def calc_trend_segment_values(trend_segments, inital_value=0):
-    print("caluclating trend segment values...")
+    """Fills in the average or cohesion values for trend or cohesion segments. Should only be used on segments that have been day-split by `split_segments`."""
 
     new_trend_segments = []
 
@@ -353,10 +382,12 @@ S = TypeVar("S", bound=Segment)
 DrawFunction = Callable[[ImageDraw.ImageDraw, S, Coords, Mapping[str,Any], Lut, Mapping[str,Any]], None]
 
 SetupFunction = Callable[[Sequence[S], Mapping[str,Any]], tuple[Mapping[str,Any], float|None, float|None]]
-def defaultSetupFunction(segments:Sequence[S], extra:Mapping[str,Any]) -> tuple[Mapping[str,Any], float|None, float|None]:
+def _defaultSetupFunction(segments:Sequence[S], extra:Mapping[str,Any]) -> tuple[Mapping[str,Any], float|None, float|None]:
     return ({}, None, None)
 
-def draw_chart(segments:Sequence[Segment], draw_function:DrawFunction, setup_function:SetupFunction=defaultSetupFunction, lut:Lut=[], width:int=720, day_height:int=6, extra:Mapping[str,Any]={}) -> ChartParams:
+def draw_chart(segments:Sequence[Segment], draw_function:DrawFunction, setup_function:SetupFunction=_defaultSetupFunction, lut:Lut=[], width:int=720, day_height:int=6, extra:Mapping[str,Any]={}) -> ChartParams:
+    """common chart-drawing code for all history-style charts (history, trend, and cohesion)"""
+    
     first_date = segments[0].start.date()
 
     day_count = count_days(segments)
@@ -385,7 +416,7 @@ def draw_chart(segments:Sequence[Segment], draw_function:DrawFunction, setup_fun
 
 
 def draw_segment_chart(off_segments:Sequence[Segment], width=720, day_height=6) -> ChartParams:
-    print("drawing segment chart...")
+    """draws the basic history chart"""
 
     def draw_function(draw:ImageDraw.ImageDraw, segment:Segment, coords:Coords, setup:Mapping[str,Any]|None, lut:Lut|None, extra) -> None:
         draw.rectangle(coords, fill=(0,0,0), outline=None, width=0)
@@ -395,7 +426,7 @@ def draw_segment_chart(off_segments:Sequence[Segment], width=720, day_height=6) 
 
 
 def draw_trend_chart(trend_segments:Sequence[TrendSegment], trend_interval:int, lut:Lut, width=720, day_height=6, normalized=True, *, extra_ignore_interval=0) -> ChartParams:
-    print("drawing trend chart...")
+    """draws the trend chart"""
 
     def setup_function(segments:Sequence[TrendSegment], extra) -> tuple[dict[str,Any], float, float]:
         trend_interval = extra["trend_interval"]
@@ -446,7 +477,7 @@ def draw_trend_chart(trend_segments:Sequence[TrendSegment], trend_interval:int, 
 
 
 def draw_direction_chart(trend_segments, lut, width=720, day_height=6):  # pragma: no cover -- debugging function
-    print("drawing direction chart...")
+    """debugging function to draw only the segment trend direction (not value) of trend-style charts (trend and cohesion)"""
 
     def setup_function(segments):
         return (None, 0, 1)
@@ -467,6 +498,8 @@ def draw_direction_chart(trend_segments, lut, width=720, day_height=6):  # pragm
 
 
 def colormap_to_lut(colormap:mpl.colors.Colormap) -> Lut:
+    """converts a matplotlib Colormap to a faster-to-use lookup table"""
+
     lut = [list(colormap(i)[:-1]) for i in np.linspace(0, 1, 256)]
 
     if type(colormap) == mpl.colors.ListedColormap:
@@ -477,6 +510,8 @@ def colormap_to_lut(colormap:mpl.colors.Colormap) -> Lut:
 
 
 def draw_gradient(draw:ImageDraw.ImageDraw, x1, y1, x2, y2, start_value:int, end_value:int, lut:Lut) -> None:
+    """draw a horizontal gradient"""
+
     if start_value == end_value:
         draw.rectangle((x1, y1, x2, y2), fill=lut[round(255 * start_value)], outline=None, width=0)
     else:
@@ -502,7 +537,8 @@ def draw_gradient(draw:ImageDraw.ImageDraw, x1, y1, x2, y2, start_value:int, end
 
 
 def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, key_min=None, key_max=None, *, gridcolor=(128,128,128), percentage=False, sunrise_args=None):
-    print("drawing chart frame...")
+    """Draws the chart frame (grid lines, labels, color key, and sunrise and sunset).
+    The arguments before the * correspond to `*ChartParams`, the output type of the `draw_*_chart` functions."""
 
     first_date = start_time.date()
 
@@ -594,8 +630,7 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
         pixels_per_marker = chart_image.width / marker_delta
         
         first_marker = math.ceil(key_min * scale_range)
-        if abs(first_marker - key_min * scale_range) < 1e-8: # fix for off-by-one error when starting on an integer
-            print("integer start fix")
+        if abs(first_marker - key_min * scale_range) < 1e-8: # fix for off-by-one error when starting on an integer  #TODO: is this still needed/valid after switching to datetime?
             first_marker += 1
         
         last_marker = math.floor(key_max * scale_range)
@@ -627,6 +662,8 @@ def draw_chart_frame(chart_image, day_height, day_count, start_time, lut=None, k
 
 
 def draw_sunrise_and_sunset(draw, width, day_height, day_count, first_date, sunrise_args):
+    """draw sunrise and sunset markers for the chart frame"""
+
     tz = zoneinfo.ZoneInfo(sunrise_args.tz)
     obs = ephem.Observer()
     obs.lat = str(sunrise_args.lat)
@@ -649,6 +686,8 @@ def draw_sunrise_and_sunset(draw, width, day_height, day_count, first_date, sunr
 
 
 def format_hours(h:float) -> str:
+    """convert decimal number of hours into hh:mm format"""
+
     assert h >= 0
     hours = int(h)
     minutes = h % 1 * 60
@@ -659,7 +698,7 @@ def format_hours(h:float) -> str:
 
 
 def draw_plots(off_segments, on_segments, trend_segments, cohesion_segments):
-    print("drawing plots...")
+    """draw matplotlib plots"""
 
     off_segment_lengths = segment_length_hours(off_segments)
     on_segment_lengths = segment_length_hours(on_segments)
@@ -671,6 +710,8 @@ def draw_plots(off_segments, on_segments, trend_segments, cohesion_segments):
 
 
 def draw_plots_page1(off_segments, on_segments, off_segment_lengths, on_segment_lengths):
+    """draw page of segment length histogram plots"""
+
     w = 8.5
     h = 11
     fig, axs = plt.subplots(2, 2, figsize=(w,h), height_ratios=(1,3), tight_layout=True)
@@ -685,6 +726,8 @@ def draw_plots_page1(off_segments, on_segments, off_segment_lengths, on_segment_
 
 
 def draw_plots_page2(off_segments, on_segments, off_segment_lengths, on_segment_lengths, trend_segments, cohesion_segments):
+    """draw page of various scatter plots"""
+
     w = 8.5
     h = 11
     fig, axs = plt.subplots(3, 2, figsize=(w,h), tight_layout=True)
@@ -692,7 +735,6 @@ def draw_plots_page2(off_segments, on_segments, off_segment_lengths, on_segment_
     n = min(len(off_segments), len(on_segments))
 
     if off_segments[0].end == on_segments[0].start: # starts with off segment
-        print("off segment first")
         x1 = off_segment_lengths[:n]
         y1 = on_segment_lengths[:n]
         c1 = [i.start.timestamp() for i in on_segments[:n]]
@@ -701,7 +743,7 @@ def draw_plots_page2(off_segments, on_segments, off_segment_lengths, on_segment_
         y2 = off_segment_lengths[1:n]
         c2 = [i.start.timestamp() for i in off_segments[1:n]]
     elif on_segments[0].end == off_segments[0].start: # starts with on segment
-        print("WARNING: on segment first (UNTESTED)")
+        print("WARNING: on segment first (not fully tested)")
         x1 = off_segment_lengths[:n-1]
         y1 = on_segment_lengths[1:n]
         c1 = [i.start.timestamp() for i in on_segments[1:n]]
@@ -710,7 +752,8 @@ def draw_plots_page2(off_segments, on_segments, off_segment_lengths, on_segment_
         y2 = off_segment_lengths[:n]
         c2 = [i.start.timestamp() for i in off_segments[:n]]
     else:
-        print("ERROR: first segments don't line up")
+        raise ValueError(f"first segments don't line up: {on_segments[0]} {off_segments[0]}")
+        
 
     scattersize = 8
 
@@ -730,6 +773,8 @@ def draw_plots_page2(off_segments, on_segments, off_segment_lengths, on_segment_
 
 
 def draw_plots_page3(trend_segments, cohesion_segments):
+    """draw page of trend and cohesion line segments"""
+
     w = 11
     h = 8.5
     fig, axs = plt.subplots(2, 1, figsize=(w,h), tight_layout=True)
@@ -906,7 +951,9 @@ def draw_plot_cohesion_line(ax, cohesion_segments, full_range=False):
     ax.legend(loc="upper right")
 
 
-def segment_length_hours(segments:Sequence[Segment]):
+def segment_length_hours(segments:Sequence[Segment]) -> list[float]:
+    """return a list of segment lengths, in hours"""
+
     segment_lengths = []
     for s in segments:
         d = s.end - s.start
@@ -917,10 +964,12 @@ def segment_length_hours(segments:Sequence[Segment]):
 
 
 def make_bins(segment_lengths:Sequence[float], hours_per_bin:float) -> list[float]:
+    """find histogram bin boundaries"""
     return [(i * hours_per_bin) for i in range(0, math.ceil(max(segment_lengths) / hours_per_bin) + 1)]
 
 
 def count_days(segments:Sequence[Segment]) -> int:
+    """count the number of days included in a list of segments"""
     first_date = segments[0].start.date()
     last_date  = segments[-1].end.date()
     return (last_date - first_date).days + 1
@@ -939,7 +988,7 @@ if __name__ == "__main__":
         usage="%(prog)s [-h] [-f MIN] [-lat LAT] [-lon LON] [-tz TZ] outfolder infiles...",
         epilog="With no files specified, arguments are read from 'input.txt'"
     )
-    parser.add_argument("-f", "--filter", metavar="MIN", type=float, help="ignore segments shorter than MIN minutes long")
+    parser.add_argument("-f", "--filter", metavar="MIN", type=float, default=0, help="ignore segments shorter than MIN minutes long")
     file_group = parser.add_argument_group("files")
     file_group.add_argument("outfolder", nargs="?", help="directory to output generated charts and plots")
     file_group.add_argument("infiles", nargs="*", help="history file(s) to read")

@@ -18,21 +18,22 @@ button toggles the relay and records the event to `history.txt`.
 output by `lamps.py`.
 
 ```txt
-usage: render.py [-h] [-lat LAT] [-lon LON] [-tz TZ] outfolder infiles...
+usage: render.py [-h] [-f MIN] [-lat LAT] [-lon LON] [-tz TZ] outfolder infiles...
 
 options:
-  -h, --help  show this help message and exit
+  -h, --help            show this help message and exit
+  -f MIN, --filter MIN  ignore segments shorter than MIN minutes long
 
 files:
-  outfolder   directory to output generated charts and plots
-  infiles     history file(s) to read
+  outfolder             directory to output generated charts and plots
+  infiles               history file(s) to read
 
 sunrise and sunset:
   Specify all three of these arguments to add sunrise and sunset markers to the history chart
 
-  -lat LAT    latitude in degrees north
-  -lon LON    longitude in degrees east
-  -tz TZ      timezone name, e.g., "America/Los_Angeles"
+  -lat LAT              latitude in degrees north
+  -lon LON              longitude in degrees east
+  -tz TZ                timezone name, e.g., "America/Los_Angeles"
 
 With no files specified, arguments are read from 'input.txt'
 ```
