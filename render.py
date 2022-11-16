@@ -63,25 +63,26 @@ class Event:
 
 
 class Segment:
-    def __init__(self, start:datetime, end:datetime, type_:OnOff):
-        self.start = start
-        self.end   = end
-        self.type  = type_
+    def __init__(self, start:datetime, end:datetime, type_:OnOff|None, start_event:Event, end_event:Event):
+        self.start       = start
+        self.end         = end
+        self.type        = type_
+        self.start_event = start_event
+        self.end_event   = end_event
     
     def __repr__(self):
         return f"Segment([{self.start}] -> [{self.end}] {self.type})"
     
     def as_tuple(self):
-        return (self.start, self.end, self.type)
+        return (self.start, self.end, self.type, self.start_event, self.end_event)
     
     def total_seconds(self):
         return (self.end - self.start).total_seconds()
 
 
 class TrendSegment (Segment):
-    def __init__(self, start:datetime, end:datetime, trend:Trend, start_value=None, end_value=None):
-        self.start       = start
-        self.end         = end
+    def __init__(self, start:datetime, end:datetime, trend:Trend, start_value=None, end_value=None, start_event:Event=None, end_event:Event=None):
+        super().__init__(start, end, None, start_event, end_event)
         self.trend       = trend
         self.start_value = start_value
         self.end_value   = end_value
@@ -91,7 +92,7 @@ class TrendSegment (Segment):
         return f"TrendSegment([{self.start}] -> [{self.end}] {self.trend.name} {self.start_value} -> {self.end_value} ({hours}))"
     
     def as_tuple(self):
-        return (self.start, self.end, self.trend, self.start_value, self.end_value)
+        return (self.start, self.end, self.trend, self.start_value, self.end_value, self.start_event, self.end_event)
 
 
 
@@ -104,6 +105,8 @@ def main(outfolder, infiles, segment_filter_minutes=None, sunrise_args=None):  #
     events = load_events_files(infiles)
 
     all_segments = make_segments(events, segment_filter_minutes=segment_filter_minutes)
+    events = events_from_segments(all_segments)
+
     off_segments, on_segments = separate_on_off_segments(all_segments)
 
     split_off_segments = split_segments(off_segments)
@@ -160,36 +163,31 @@ def load_events_files(infiles:Sequence[str|bytes|os.PathLike]) -> list[Event]:
 def make_segments(events:Sequence[Event], segment_filter_minutes:float=0) -> Sequence[Segment]:
     all_segments = []
     state = events[0].state
-    segment_start = events[0]
-    for e in events:
-        t1 = segment_start.time if segment_start else None
-        t2 = e.time
+    start_event = events[0]
+    for end_event in events:
+        t1 = start_event.time
+        t2 = end_event.time
 
         if state == OnOff.on:
-            if e.state == OnOff.on:
-                if segment_start:  #pragma: no cover
-                    print("warning: state transition from on to on:", segment_start, e)
-            elif e.state == OnOff.off:
-                if t1:
-                    all_segments.append(Segment(t1, t2, OnOff.on))
+            if end_event.state == OnOff.on:
+                print("warning: state transition from on to on:", start_event, end_event)
+            elif end_event.state == OnOff.off:
+                all_segments.append(Segment(t1, t2, OnOff.on, start_event, end_event))
 
-                segment_start = e
+                start_event = end_event
                 state = OnOff.off
             else:  #pragma: no cover
-                raise ValueError(f"invalid event state '{e.state}'")
+                raise ValueError(f"invalid event state '{end_event.state}'")
         elif state == OnOff.off:
-            t1 = segment_start.time
-            t2 = e.time
+            if end_event.state == OnOff.on:
+                all_segments.append(Segment(t1, t2, OnOff.off, start_event, end_event))
 
-            if e.state == OnOff.on:
-                all_segments.append(Segment(t1, t2, OnOff.off))
-
-                segment_start = e
+                start_event = end_event
                 state = OnOff.on
-            elif e.state == OnOff.off:  #pragma: no cover
-                print("warning: state transition from off to off:", segment_start, e)
+            elif end_event.state == OnOff.off:  #pragma: no cover
+                print("warning: state transition from off to off:", start_event, end_event)
             else:  #pragma: no cover
-                raise ValueError(f"invalid event state '{e.state}'")
+                raise ValueError(f"invalid event state '{end_event.state}'")
         else:  #pragma: no cover
             raise ValueError(f"invalid state machine state '{state}'")
 
@@ -207,23 +205,36 @@ def filter_segments(all_segments:Sequence[Segment], segment_filter_minutes:float
     new_segments = []
     i = 0
     while i < len(all_segments):
-        start = all_segments[i].start
-        end   = all_segments[i].end
-        type_ = all_segments[i].type
+        start       = all_segments[i].start
+        start_event = all_segments[i].start_event
+        end         = all_segments[i].end
+        end_event   = all_segments[i].end_event
+        type_       = all_segments[i].type
 
         for j in range(i+1, len(all_segments)):  # loop through segments after the current segment
             if all_segments[j].total_seconds() < (segment_filter_minutes * 60) or all_segments[j].type == type_:  # lump short segments into the current segment and merge adjacent segments of the same type
                 i = j  # skip ahead
                 end = all_segments[j].end
+                end_event = all_segments[j].end_event
             else:  # stop lumping segments when you find a long one
                 break
         
-        new_segments.append(Segment(start, end, type_))
+        new_segments.append(Segment(start, end, type_, start_event, end_event))
         i += 1
     
     print(f"filtered {len(all_segments)} segments down to {len(new_segments)}")
 
     return new_segments
+
+
+def events_from_segments(segments:Sequence[Segment]) -> list[Event]:
+    """Extract events from segments.
+    This is so you filter the segments, and then get the events back out to feed to `make_trend_segments`"""
+    events = []
+    for s in segments:
+        events.append(s.start_event)
+    events.append(segments[-1].end_event)
+    return events
 
 
 def separate_on_off_segments(all_segments:Sequence[Segment]) -> tuple[list[Segment],list[Segment]]:

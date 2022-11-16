@@ -103,7 +103,13 @@ def test_make_segments_on_first(segments_on_first):
     assert on_segments[2].start.hour == 9
     assert on_segments[3].start.hour == 5
     assert on_segments[4].start.hour == 3
-    
+
+
+def test_events_from_segments(events_on_first):
+    segments = make_segments(events_on_first)
+    events = events_from_segments(segments)
+    assert events_on_first == events
+
 
 def test_split_segments(segments_on_first):
     off_segments, on_segments = segments_on_first
